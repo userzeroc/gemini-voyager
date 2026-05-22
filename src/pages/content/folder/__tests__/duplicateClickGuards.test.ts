@@ -38,6 +38,25 @@ vi.mock('../floatingPanel', () => ({
 type TestableManager = {
   containerElement: HTMLElement | null;
   sidebarContainer: HTMLElement | null;
+  data: {
+    folders: Array<{
+      id: string;
+      name: string;
+      parentId: string | null;
+      isExpanded: boolean;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+    folderContents: Record<
+      string,
+      Array<{
+        conversationId: string;
+        title: string;
+        url: string;
+        addedAt: number;
+      }>
+    >;
+  };
   activeFolderInput: HTMLElement | null;
   activeImportDialog: HTMLElement | null;
   activeImportExportMenu: HTMLElement | null;
@@ -261,6 +280,21 @@ describe('folder duplicate click guards', () => {
   it('shows native multi-select actions without the sidebar folder container', () => {
     manager = new FolderManager();
     const typedManager = manager as unknown as TestableManager;
+    typedManager.data = {
+      folders: [
+        {
+          id: 'target-folder',
+          name: 'Target',
+          parentId: null,
+          isExpanded: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      folderContents: {
+        'target-folder': [],
+      },
+    };
 
     typedManager.enterMultiSelectMode('conv-a', 'native');
 
@@ -272,11 +306,13 @@ describe('folder duplicate click guards', () => {
     expect(floatingHost?.querySelector('[data-selection-count="true"]')?.textContent).toBe(
       '1 selected',
     );
+    expect(floatingHost?.querySelector('.gv-multi-select-move-btn')).not.toBeNull();
     expect(floatingHost?.querySelector('.gv-multi-select-delete-btn')).not.toBeNull();
 
     typedManager.exitMultiSelectMode();
 
     expect(floatingHost?.classList.contains('gv-multi-select-mode')).toBe(false);
+    expect(floatingHost?.querySelector('.gv-multi-select-move-btn')).toBeNull();
     expect(floatingHost?.querySelector('.gv-multi-select-delete-btn')).toBeNull();
   });
 

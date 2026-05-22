@@ -4769,7 +4769,9 @@ export class FolderManager {
       const isInsideMultiSelectHost = this.multiSelectHostElement?.contains(target);
 
       // Check if click is on an overlay (menus, dialogs, etc.)
-      const isOnOverlay = target.closest('.cdk-overlay-container, .mat-mdc-dialog-container');
+      const isOnOverlay = target.closest(
+        '.cdk-overlay-container, .mat-mdc-dialog-container, .gv-folder-dialog-overlay',
+      );
 
       // If click is outside all relevant areas, exit multi-select mode
       if (
@@ -4878,6 +4880,14 @@ export class FolderManager {
     if (actionsContainer && this.isMultiSelectMode) {
       actionsContainer.innerHTML = ''; // Clear existing buttons
 
+      const moveBtn = document.createElement('button');
+      moveBtn.className = 'gv-multi-select-action-btn gv-multi-select-move-btn';
+      moveBtn.innerHTML =
+        '<mat-icon role="img" class="mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color" aria-hidden="true">drive_file_move</mat-icon>';
+      moveBtn.title = this.t('conversation_move_to_folder');
+      moveBtn.addEventListener('click', () => this.showBatchMoveToFolderDialog());
+      actionsContainer.appendChild(moveBtn);
+
       if (this.multiSelectSource === 'folder') {
         // Delete button for folder multi-select (removes from folder only)
         const deleteBtn = document.createElement('button');
@@ -4927,6 +4937,176 @@ export class FolderManager {
     }
 
     return result;
+  }
+
+  private getSelectedConversationsForBatchMove(): ConversationReference[] {
+    if (this.multiSelectSource === 'folder') {
+      return this.getSelectedConversationsData(this.multiSelectFolderId ?? '');
+    }
+
+    const result: ConversationReference[] = [];
+    const now = Date.now();
+    this.selectedConversations.forEach((conversationId) => {
+      const conversationEl = this.findNativeConversationElement(conversationId);
+      if (!conversationEl) return;
+
+      const conversationData = this.extractConversationData(conversationEl);
+      result.push({
+        conversationId,
+        title: this.extractNativeConversationTitle(conversationEl) || 'Untitled',
+        url: conversationData.url,
+        addedAt: now,
+        isGem: conversationData.isGem,
+        gemId: conversationData.gemId,
+      });
+    });
+
+    return result;
+  }
+
+  private showBatchMoveToFolderDialog(): void {
+    const selectedConversations = this.getSelectedConversationsForBatchMove();
+    if (selectedConversations.length === 0) return;
+
+    // Create dialog overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'gv-folder-dialog-overlay';
+
+    // Create dialog
+    const dialog = document.createElement('div');
+    dialog.className = 'gv-folder-dialog';
+
+    // Dialog title
+    const dialogTitle = document.createElement('div');
+    dialogTitle.className = 'gv-folder-dialog-title';
+    dialogTitle.textContent = this.t('conversation_move_to_folder_title');
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.className = 'gv-folder-dialog-search';
+    searchInput.placeholder = this.t('timelinePreviewSearch');
+    searchInput.setAttribute('aria-label', this.t('timelinePreviewSearch'));
+
+    // Folder list
+    const folderList = document.createElement('div');
+    folderList.className = 'gv-folder-dialog-list';
+
+    const emptyState = document.createElement('div');
+    emptyState.className = 'gv-folder-dialog-empty';
+    emptyState.textContent = this.t('timelinePreviewNoResults');
+
+    const folderOptions: FolderDialogOption[] = [];
+
+    const collectFolderOptions = (
+      parentId: string | null,
+      level: number = 0,
+      parentPath: string = '',
+    ) => {
+      const folders = this.data.folders.filter((f) => f.parentId === parentId);
+      const sortedFolders = this.sortFolders(folders); // Apply same sorting as sidebar
+      sortedFolders.forEach((folder) => {
+        const path = parentPath ? `${parentPath} / ${folder.name}` : folder.name;
+        folderOptions.push({ folder, level, path });
+        collectFolderOptions(folder.id, level + 1, path);
+      });
+    };
+
+    const renderFolderOptions = (query: string = '') => {
+      folderList.innerHTML = '';
+      const normalizedQuery = normalizeFolderDialogSearchText(query);
+      const visibleOptions = normalizedQuery
+        ? folderOptions.filter((option) =>
+            normalizeFolderDialogSearchText(option.path).includes(normalizedQuery),
+          )
+        : folderOptions;
+
+      visibleOptions.forEach(({ folder, level, path }) => {
+        const folderItem = document.createElement('button');
+        folderItem.className = 'gv-folder-dialog-item';
+        folderItem.style.paddingLeft = `${calculateFolderDialogPaddingLeft(level)}px`;
+        folderItem.dataset.folderId = folder.id;
+        folderItem.dataset.folderPath = path;
+        folderItem.setAttribute('aria-label', path);
+
+        // Folder icon
+        const icon = document.createElement('mat-icon');
+        icon.className = 'mat-icon notranslate google-symbols mat-ligature-font mat-icon-no-color';
+        icon.setAttribute('role', 'img');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'folder';
+
+        // Folder name
+        const name = document.createElement('span');
+        name.className = 'gv-folder-dialog-item-text';
+        name.textContent = folder.name;
+
+        const pathLabel = document.createElement('span');
+        pathLabel.className = 'gv-folder-dialog-item-path';
+        pathLabel.textContent = `/${normalizeFolderDialogSearchText(path)}`;
+
+        folderItem.appendChild(icon);
+        folderItem.appendChild(name);
+        folderItem.appendChild(pathLabel);
+
+        folderItem.addEventListener('click', () => {
+          this.moveSelectedConversationsToFolder(folder.id, selectedConversations);
+          overlay.remove();
+        });
+
+        folderList.appendChild(folderItem);
+      });
+
+      if (visibleOptions.length === 0) {
+        folderList.appendChild(emptyState);
+      }
+    };
+
+    collectFolderOptions(null);
+    renderFolderOptions();
+
+    searchInput.addEventListener('input', () => {
+      renderFolderOptions(searchInput.value);
+    });
+
+    // Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'gv-folder-dialog-cancel';
+    cancelBtn.textContent = this.t('pm_cancel');
+    cancelBtn.addEventListener('click', () => overlay.remove());
+
+    // Assemble dialog
+    dialog.appendChild(dialogTitle);
+    dialog.appendChild(searchInput);
+    dialog.appendChild(folderList);
+    dialog.appendChild(cancelBtn);
+    overlay.appendChild(dialog);
+
+    // Add to body
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
+  }
+
+  private moveSelectedConversationsToFolder(
+    targetFolderId: string,
+    selectedConversations: ConversationReference[],
+  ): void {
+    if (selectedConversations.length === 0) return;
+    const movedCount = selectedConversations.length;
+
+    const sourceFolderId =
+      this.multiSelectSource === 'folder' ? (this.multiSelectFolderId ?? undefined) : undefined;
+    this.addConversationsToFolder(targetFolderId, selectedConversations, sourceFolderId);
+    this.showNotification(
+      this.t('batch_move_success').replace('{count}', String(movedCount)),
+      'success',
+    );
+    this.exitMultiSelectMode();
   }
 
   private renameConversation(

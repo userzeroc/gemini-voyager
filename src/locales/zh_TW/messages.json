@@ -1255,6 +1255,10 @@
     "message": "刪除所選",
     "description": "多選模式下的批次刪除按鈕提示"
   },
+  "batch_move_success": {
+    "message": "✓ 已移動 {count} 個對話",
+    "description": "批次移動成功訊息"
+  },
   "batch_delete_match_patterns": {
     "message": "刪除，確認，確定，是，delete,confirm,yes,ok,remove",
     "description": "符合原生刪除/確認按鈕的關鍵字清單（逗號分隔）"

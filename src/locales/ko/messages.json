@@ -1295,6 +1295,10 @@
     "message": "선택한 항목 삭제",
     "description": "Batch delete button tooltip in multi-select mode"
   },
+  "batch_move_success": {
+    "message": "✓ {count}개 대화를 이동했습니다",
+    "description": "Batch move success message"
+  },
   "batch_delete_match_patterns": {
     "message": "delete,confirm,yes,ok,remove,삭제,확인,예,확인,제거",
     "description": "Comma-separated list of keywords to match native delete/confirm buttons (case-insensitive)"

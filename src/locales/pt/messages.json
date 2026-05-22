@@ -1295,6 +1295,10 @@
     "message": "Excluir selecionados",
     "description": "Batch delete button tooltip in multi-select mode"
   },
+  "batch_move_success": {
+    "message": "✓ {count} conversa(s) movida(s)",
+    "description": "Batch move success message"
+  },
   "batch_delete_match_patterns": {
     "message": "delete,confirm,yes,ok,remove,excluir,confirmar,sim,aceitar,apagar",
     "description": "Comma-separated list of keywords to match native delete/confirm buttons (case-insensitive)"

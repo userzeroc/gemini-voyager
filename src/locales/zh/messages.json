@@ -1295,6 +1295,10 @@
     "message": "删除所选",
     "description": "多选模式下的批量删除按钮提示"
   },
+  "batch_move_success": {
+    "message": "✓ 已移动 {count} 个会话",
+    "description": "批量移动成功消息"
+  },
   "batch_delete_match_patterns": {
     "message": "删除，确认，确定，是，delete,confirm,yes,ok,remove",
     "description": "匹配原生删除/确认按钮的关键词列表（逗号分隔）"

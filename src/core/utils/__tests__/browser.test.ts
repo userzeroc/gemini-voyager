@@ -6,7 +6,32 @@ import {
   isMac,
   isSafari,
   shouldShowSafariUpdateReminder,
+  supportsExtensionNotifications,
+  supportsOptionalHostPermissions,
 } from '../browser';
+
+describe('supportsOptionalHostPermissions', () => {
+  const setUA = (ua: string) => vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua);
+
+  it('returns false on Firefox below 128 (optional_host_permissions not honored)', () => {
+    setUA('Mozilla/5.0 (Windows NT 10.0; rv:115.0) Gecko/20100101 Firefox/115.0');
+    expect(supportsOptionalHostPermissions()).toBe(false);
+    setUA('Mozilla/5.0 (Windows NT 10.0; rv:127.0) Gecko/20100101 Firefox/127.0');
+    expect(supportsOptionalHostPermissions()).toBe(false);
+  });
+
+  it('returns true on Firefox 128+', () => {
+    setUA('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0');
+    expect(supportsOptionalHostPermissions()).toBe(true);
+    setUA('Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0');
+    expect(supportsOptionalHostPermissions()).toBe(true);
+  });
+
+  it('returns true on Chromium browsers', () => {
+    setUA('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0');
+    expect(supportsOptionalHostPermissions()).toBe(true);
+  });
+});
 
 describe('Safari Update Reminder Control', () => {
   describe('shouldShowSafariUpdateReminder', () => {
@@ -117,6 +142,34 @@ describe('isMac', () => {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0',
     );
     expect(isMac()).toBe(true);
+  });
+});
+
+describe('supportsExtensionNotifications', () => {
+  it('returns false on Safari even when the notifications API shape exists', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15',
+    );
+    vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+    const originalNotifications = chrome.notifications;
+    chrome.notifications = { create: vi.fn() } as unknown as typeof chrome.notifications;
+
+    expect(supportsExtensionNotifications()).toBe(false);
+
+    chrome.notifications = originalNotifications;
+  });
+
+  it('returns true on Chromium when notifications.create is available', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0',
+    );
+    vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Google Inc.');
+    const originalNotifications = chrome.notifications;
+    chrome.notifications = { create: vi.fn() } as unknown as typeof chrome.notifications;
+
+    expect(supportsExtensionNotifications()).toBe(true);
+
+    chrome.notifications = originalNotifications;
   });
 });
 

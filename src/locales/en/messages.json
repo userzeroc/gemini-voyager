@@ -231,6 +231,34 @@
     "message": "Name (optional)",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "Prompt Manager",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "Starred Library",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "Search starred messages",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "No starred messages match your search",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "Untitled conversation",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "Open starred message",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "Failed to load starred messages",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "Switch to dark mode",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "Remove from folder",
     "description": "Remove conversation button tooltip"
+  },
+  "folder_remove_conversation_action": {
+    "message": "Remove",
+    "description": "Short confirmation button label for removing a conversation from a folder"
   },
   "folder_remove_conversation_confirm": {
     "message": "Remove \"{title}\" from this folder?",
@@ -1147,6 +1179,14 @@
     "message": "Also process images shown on screen. Slower; the image may briefly flash while processing.",
     "description": "Hint for the preview-time watermark removal toggle"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "Recommended",
+    "description": "Inline badge highlighting the recommended (download-time) watermark removal option"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "Unstable",
+    "description": "Inline badge warning that the preview-time watermark removal option is unstable"
+  },
   "nanobananaDownloadTooltip": {
     "message": "Download unwatermarked image (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "Failed — open Gemini first",
     "description": "Error when copying AI organization prompt fails"
   },
+  "aiOrgNoConversations": {
+    "message": "No chats found — open and scroll your chat list, then retry",
+    "description": "Button text shown when no conversations could be read for AI organization"
+  },
   "aiOrgCopyHint": {
     "message": "Copies all conversations & folder structure as a prompt. Paste into Gemini to get an importable folder plan.",
     "description": "Hint text below the AI organization copy button"
@@ -1994,5 +2038,57 @@
   "floatingPanelGestureHint": {
     "message": "Double-click to rename • Right-click for pin, color, delete.",
     "description": "Floating folder panel hint explaining folder gestures and context menu actions"
+  },
+  "responseCompleteNotification": {
+    "message": "Response completion notifications",
+    "description": "Toggle label for response completion system notifications"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "Send a system notification when Gemini finishes a response.",
+    "description": "Hint for response completion system notifications"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "Safari does not support extension system notifications; Voyager will show an in-page prompt when you return.",
+    "description": "Safari-specific hint for response completion notifications"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Gemini response complete",
+    "description": "System notification body when Gemini finishes a response"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "New response completed",
+    "description": "Foreground toast text when a Gemini response completes offscreen"
+  },
+  "pluginsTitle": {
+    "message": "Plugins",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "Enable plugins that enhance other AI sites. Turning one on asks for permission to access that site.",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "Source",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "Site permission denied — the plugin can't run without it.",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "Unsupported on this browser — it can't grant the site access this plugin needs.",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "Loading plugins…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "No plugins available yet.",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "Refresh plugins",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

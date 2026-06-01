@@ -231,6 +231,34 @@
     "message": "Nome (opcional)",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "Gestor de prompts",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "Biblioteca com estrela",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "Pesquisar mensagens com estrela",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "Nenhuma mensagem com estrela corresponde à pesquisa",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "Conversa sem título",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "Abrir mensagem com estrela",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "Não foi possível carregar mensagens com estrela",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "Mudar para modo escuro",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "Remover da pasta",
     "description": "Remove conversation button tooltip"
+  },
+  "folder_remove_conversation_action": {
+    "message": "Remover",
+    "description": "Short confirmation button label for removing a conversation from a folder"
   },
   "folder_remove_conversation_confirm": {
     "message": "Remover \"{title}\" desta pasta?",
@@ -1147,6 +1179,14 @@
     "message": "Também processa as imagens exibidas na tela. É mais lento e a imagem pode piscar brevemente durante o processamento.",
     "description": "Hint for the preview-time watermark removal toggle"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "Recomendado",
+    "description": "Inline badge highlighting the recommended (download-time) watermark removal option"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "Instável",
+    "description": "Inline badge warning that the preview-time watermark removal option is unstable"
+  },
   "nanobananaDownloadTooltip": {
     "message": "Baixar imagem sem marca d'água (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "Falha — abra o Gemini primeiro",
     "description": "Erro ao copiar o prompt de organização com IA"
   },
+  "aiOrgNoConversations": {
+    "message": "Nenhuma conversa encontrada — abra e role sua lista de conversas e tente novamente",
+    "description": "Texto do botão quando nenhuma conversa pôde ser lida para a organização por IA"
+  },
   "aiOrgCopyHint": {
     "message": "Copia todas as conversas e a estrutura de pastas como um prompt. Cole no Gemini para obter um plano de pastas importável.",
     "description": "Texto de dica abaixo do botão de cópia de organização com IA"
@@ -1994,5 +2038,57 @@
   "folder_new_chat_in_folder": {
     "message": "Novo chat nesta pasta",
     "description": "Folder context menu item to create a new chat and auto-assign it to this folder"
+  },
+  "responseCompleteNotification": {
+    "message": "Notificações de resposta concluída",
+    "description": "Gemini response completion notification toggle"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "Envia uma notificação do sistema quando o Gemini termina uma resposta.",
+    "description": "Gemini response completion notification hint"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "O Safari não oferece suporte a notificações do sistema de extensões; o Voyager mostrará um aviso na página quando você voltar.",
+    "description": "Safari-specific hint for response completion notifications"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Resposta do Gemini concluída",
+    "description": "Corpo da notificação do sistema quando o Gemini termina uma resposta"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "Nova resposta concluída",
+    "description": "Texto do toast em primeiro plano quando uma resposta do Gemini termina fora da tela"
+  },
+  "pluginsTitle": {
+    "message": "Plugins",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "Ative plugins que aprimoram outros sites de IA. Ativar um pede permissão para aquele site.",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "Código",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "Permissão do site negada; o plugin não pode ser executado.",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "Sem suporte neste navegador: não é possível conceder o acesso ao site de que o plugin precisa.",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "Carregando plugins…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "Nenhum plugin disponível.",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "Atualizar plugins",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

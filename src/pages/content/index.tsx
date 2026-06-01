@@ -5,7 +5,10 @@ import {
   isExtensionContextInvalidatedError,
 } from '@/core/utils/extensionContext';
 import { isGeminiEnterpriseEnvironment } from '@/core/utils/gemini';
-import { startFormulaCopy } from '@/features/formulaCopy';
+import { startFormulaCopy, stopFormulaCopy } from '@/features/formulaCopy';
+import { startPluginHost } from '@/features/plugins';
+import { registerNativeHandler } from '@/features/plugins/runtime/nativeHandlers';
+import { resolvePluginPlatformId } from '@/features/plugins/sites/registry';
 import { initI18n } from '@/utils/i18n';
 
 import { startCanvasExport } from './canvasExport/index';
@@ -18,6 +21,7 @@ import { startContextSync } from './contextSync';
 import { startDeepResearchExport } from './deepResearch/index';
 import DefaultModelManager from './defaultModel/modelLocker';
 import { startDraftSave } from './draftSave/index';
+import { startEdgeFinalVersionNotice } from './edgeFinalVersionNotice';
 import { startEditInputWidthAdjuster } from './editInputWidth/index';
 import { startExportButton } from './export/index';
 import { startAIStudioFolderManager } from './folder/aistudio';
@@ -34,9 +38,11 @@ import { startInputHaloHider } from './inputHaloHider/index';
 import { initKaTeXConfig } from './katexConfig';
 import { startMarkdownPatcher } from './markdownPatcher/index';
 import { startMermaid } from './mermaid/index';
+import { startBrandTheme } from './platformTheme';
 import { startPreventAutoScroll } from './preventAutoScroll/index';
 import { startPromptManager } from './prompt/index';
 import { startQuoteReply } from './quoteReply/index';
+import { startResponseCompleteNotification } from './responseNotification/index';
 import { startSendBehavior } from './sendBehavior/index';
 import { startSidebarAutoHide } from './sidebarAutoHide';
 import { startSidebarWidthAdjuster } from './sidebarWidth';
@@ -44,7 +50,7 @@ import { startTimeline } from './timeline/index';
 import { startTitleUpdater } from './titleUpdater';
 import { startUserLatex } from './userLatex/index';
 import { startRainEffect, startSakuraEffect, startSnowEffect } from './visualEffects';
-import { startWatermarkRemover } from './watermarkRemover/index';
+import { startWatermarkRemover, stopWatermarkRemover } from './watermarkRemover/index';
 
 // Suppress Vite's CSS preload errors in the Chrome extension content script context.
 // Dynamic imports (e.g., mermaid) trigger Vite's __vitePreload helper which tries to
@@ -84,6 +90,10 @@ let sendBehaviorCleanup: (() => void) | null = null;
 let draftSaveCleanup: (() => void) | null = null;
 let forkCleanup: (() => void) | null = null;
 let gemsSidebarCleanup: (() => void) | null = null;
+let responseCompleteNotificationCleanup: (() => void) | null = null;
+let edgeFinalVersionNoticeCleanup: (() => void) | null = null;
+let pluginHostCleanup: (() => void) | null = null;
+let brandThemeCleanup: (() => void) | null = null;
 
 async function isForkFeatureEnabled(): Promise<boolean> {
   try {
@@ -143,9 +153,22 @@ async function initializeFeatures(): Promise<void> {
     if (!hasValidExtensionContext()) {
       return;
     }
-    // Sequential initialization with small delays between features
-    // to further reduce simultaneous resource usage
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Yield between features instead of sleeping a fixed amount. On an idle main
+    // thread (the common foreground case) requestIdleCallback fires on the next
+    // idle slice — typically well under `ms` — so tail features (timeline, export,
+    // mermaid, …) wire up promptly instead of waiting out a ~2s floor of stacked
+    // setTimeouts. When the thread is busy, the `timeout` cap makes it back off
+    // exactly like the old fixed delay, preserving the anti-thundering-herd intent.
+    // Falls back to setTimeout where requestIdleCallback is unavailable (older WebKit).
+    const delay = (ms: number) =>
+      new Promise<void>((resolve) => {
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(() => resolve(), { timeout: ms });
+        } else {
+          setTimeout(resolve, ms);
+        }
+      });
 
     // Check if this is a custom website (only prompt manager should be enabled)
     const isCustomSite = await isCustomWebsite();
@@ -159,6 +182,8 @@ async function initializeFeatures(): Promise<void> {
     }
 
     console.log('[Gemini Voyager] Not a custom website, checking for Gemini/AI Studio');
+
+    edgeFinalVersionNoticeCleanup = startEdgeFinalVersionNotice();
 
     const isEnterprise = isGeminiEnterpriseEnvironment(
       {
@@ -255,6 +280,9 @@ async function initializeFeatures(): Promise<void> {
       await delay(LIGHT_FEATURE_INIT_DELAY);
 
       startDeepResearchExport();
+      await delay(LIGHT_FEATURE_INIT_DELAY);
+
+      responseCompleteNotificationCleanup = await startResponseCompleteNotification();
       await delay(LIGHT_FEATURE_INIT_DELAY);
 
       startContextSync();
@@ -402,6 +430,30 @@ function handleVisibilityChange(): void {
   try {
     if (!hasValidExtensionContext()) return;
 
+    // Plugin ecosystem host. Started up-front on EVERY page the content script is
+    // injected into (Gemini / AI Studio, and any site a user enabled a plugin for,
+    // e.g. claude.ai via dynamic registration). It self-detects the site adapter
+    // and only mounts plugins that match the current URL AND are enabled — inert by
+    // default since all builtin plugins ship disabled, so it has no effect unless a
+    // user turns a plugin on in the popup.
+    // Bind the formula-copy builtin "native function plugin" before the host
+    // starts, so PluginHost can run it when the user enables it on Claude/ChatGPT
+    // (default off). On Gemini/AI Studio formula copy stays a built-in always-on
+    // feature started in initializeFeatures().
+    registerNativeHandler('voyager.formula-copy', {
+      start: startFormulaCopy,
+      stop: stopFormulaCopy,
+    });
+
+    pluginHostCleanup = startPluginHost();
+
+    // Cosmetic: on Claude / ChatGPT, re-skin Voyager's accent to the host
+    // platform's brand colour (injects --gv-pm-brand + a gv-platform-themed body
+    // class; CSS derives the rest). Applies the adapter's built-in colour at
+    // once, then lets an enabled plugin's declared theme override it live. No-op
+    // on Gemini / AI Studio.
+    brandThemeCleanup = startBrandTheme();
+
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
       if (isExtensionContextInvalidatedError(event.reason)) {
         event.preventDefault();
@@ -457,6 +509,30 @@ function handleVisibilityChange(): void {
 
     // If not a known site, check if it's a custom website (async)
     if (!isSupportedSite) {
+      // Third-party plugin platforms (Claude / ChatGPT / Grok …): the plugin
+      // host and platform theme already ran above. Start the cross-site Voyager
+      // features that belong everywhere — currently just the Prompt Manager
+      // floating ball (formula-copy is now the opt-in voyager.formula-copy
+      // builtin plugin) — but NOT any Gemini-specific feature (folders, timeline, export, width
+      // adjusters, …). The platform-theme CSS re-skins the Prompt Manager and
+      // the copy toast with the site's brand colour. We set `initialized` so the
+      // visibilitychange handler doesn't later fall into initializeFeatures()
+      // (which is Gemini/AI-Studio/custom-site shaped, not plugin-platform).
+      if (resolvePluginPlatformId(location.href)) {
+        console.log('[Gemini Voyager] Plugin platform: prompt manager');
+        initialized = true;
+        void startPromptManager()
+          .then((instance) => {
+            promptManagerInstance = instance;
+          })
+          .catch((error) => {
+            console.error('[Gemini Voyager] Prompt Manager init error on plugin platform:', error);
+          });
+        // Formula copy here is driven by PluginHost via the voyager.formula-copy
+        // builtin plugin (opt-in), not started unconditionally.
+        return;
+      }
+
       // For unknown sites, check storage asynchronously
       chrome.storage?.sync?.get({ gvPromptCustomWebsites: [] }, (result) => {
         const customWebsites = Array.isArray(result?.gvPromptCustomWebsites)
@@ -502,6 +578,8 @@ function handleVisibilityChange(): void {
       try {
         window.removeEventListener('unhandledrejection', onUnhandledRejection);
         window.removeEventListener('error', onWindowError);
+        // Disconnect watermark-remover observers (no-op if it never started, e.g. Safari)
+        stopWatermarkRemover();
         if (folderManagerInstance) {
           folderManagerInstance.destroy();
           folderManagerInstance = null;
@@ -533,6 +611,22 @@ function handleVisibilityChange(): void {
         if (gemsSidebarCleanup) {
           gemsSidebarCleanup();
           gemsSidebarCleanup = null;
+        }
+        if (responseCompleteNotificationCleanup) {
+          responseCompleteNotificationCleanup();
+          responseCompleteNotificationCleanup = null;
+        }
+        if (edgeFinalVersionNoticeCleanup) {
+          edgeFinalVersionNoticeCleanup();
+          edgeFinalVersionNoticeCleanup = null;
+        }
+        if (pluginHostCleanup) {
+          pluginHostCleanup();
+          pluginHostCleanup = null;
+        }
+        if (brandThemeCleanup) {
+          brandThemeCleanup();
+          brandThemeCleanup = null;
         }
         chrome.storage?.onChanged?.removeListener(onStorageChanged);
       } catch (e) {

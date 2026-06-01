@@ -83,6 +83,12 @@ export const StorageKeys = {
   PROMPT_THEME: 'gvPromptTheme',
   PROMPT_INSERT_ON_CLICK: 'gvPromptInsertOnClick',
   PROMPT_VIEW_MODE: 'gvPromptViewMode',
+  PROMPT_PANEL_VIEW: 'gvPromptPanelView',
+  // Persisted tag filter for the prompt manager (#729). chrome.storage.local
+  // only — the selected tags are a per-device view over this machine's prompt
+  // set, not a synced preference; syncing them could restore tags a device
+  // hasn't received yet. Shape: string[] of lowercased tag names.
+  PROMPT_SELECTED_TAGS: 'gvPromptSelectedTags',
 
   // Global settings
   LANGUAGE: 'language',
@@ -98,6 +104,7 @@ export const StorageKeys = {
   TAB_TITLE_UPDATE_ENABLED: 'gvTabTitleUpdateEnabled',
   MERMAID_ENABLED: 'gvMermaidEnabled',
   QUOTE_REPLY_ENABLED: 'gvQuoteReplyEnabled',
+  RESPONSE_COMPLETE_NOTIFICATION_ENABLED: 'gvResponseCompleteNotificationEnabled',
 
   // Input behavior
   CTRL_ENTER_SEND: 'gvCtrlEnterSend',
@@ -169,6 +176,8 @@ export const StorageKeys = {
   // Changelog
   CHANGELOG_DISMISSED_VERSION: 'gvChangelogDismissedVersion',
   CHANGELOG_NOTIFY_MODE: 'gvChangelogNotifyMode',
+  EDGE_FINAL_VERSION_NOTICE_FIRST_SEEN_AT: 'gvEdgeFinalVersionNoticeFirstSeenAt',
+  EDGE_FINAL_VERSION_NOTICE_SHOWN: 'gvEdgeFinalVersionNoticeShown',
 
   // Fork nodes
   FORK_NODES: 'gvForkNodes',
@@ -199,6 +208,24 @@ export const StorageKeys = {
   // Folder as Project
   FOLDER_PROJECT_ENABLED: 'gvFolderProjectEnabled',
   FOLDER_PROJECT_PENDING_FOLDER_ID: 'gvFolderProjectPendingFolderId',
+
+  // Plugin ecosystem
+  // Per-plugin install/enable state (chrome.storage.local). Shape:
+  //   Record<pluginId, { enabled: boolean; installedAt: number }>
+  // Stored in local (not sync) because the installed set can be sizeable; sync
+  // quota is precious. Entitlement (purchased/locked) is NOT stored here — it
+  // comes from the EntitlementProvider so it can be server-driven later.
+  PLUGINS_STATE: 'gvPluginsState',
+  // Registered external marketplace sources (git-based catalogs). Reserved for
+  // the future remote-registry milestone; unused today.
+  PLUGIN_MARKETPLACE_SOURCES: 'gvPluginMarketplaceSources',
+  // Cached plugin catalog fetched from the marketplace (chrome.storage.local).
+  // Shape: { manifests: PluginManifest[]; fetchedAt: number }. Local (not sync)
+  // because it's network-derived per-device data, refreshed on a TTL.
+  PLUGIN_CATALOG_CACHE: 'gvPluginCatalogCache',
+  // Plugin cards the user has collapsed in the popup list (string[] of plugin
+  // ids). Local (not sync) — it's a per-device UI preference, not user data.
+  PLUGIN_UI_COLLAPSED: 'gvPluginUiCollapsed',
 } as const;
 
 export type StorageKey = (typeof StorageKeys)[keyof typeof StorageKeys];

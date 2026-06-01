@@ -231,6 +231,34 @@
     "message": "备注名（可选）",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "提示词管理器",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "星标收藏库",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "搜索星标内容",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "没有匹配的星标内容",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "未命名会话",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "打开星标内容",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "星标内容加载失败",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "切换到深色模式",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "从文件夹中移除",
     "description": "移除对话按钮提示"
+  },
+  "folder_remove_conversation_action": {
+    "message": "移除",
+    "description": "从文件夹移除对话确认按钮的短标签"
   },
   "folder_remove_conversation_confirm": {
     "message": "从此文件夹中移除「{title}」？",
@@ -1147,6 +1179,14 @@
     "message": "同时处理页面上预览的图片。速度更慢，处理过程中图片可能会短暂闪一下。",
     "description": "预览时去水印开关说明"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "推荐",
+    "description": "下载时去水印开关旁的推荐标签"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "不稳定",
+    "description": "预览时去水印开关旁的不稳定标签"
+  },
   "nanobananaDownloadTooltip": {
     "message": "下载无水印图片 (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "失败 — 请先打开 Gemini",
     "description": "复制 AI 整理提示失败时的错误"
   },
+  "aiOrgNoConversations": {
+    "message": "未找到对话 — 请展开并滚动聊天列表后重试",
+    "description": "AI 整理未能读取到任何对话时的按钮文字"
+  },
   "aiOrgCopyHint": {
     "message": "复制所有对话和文件夹结构作为提示词。粘贴到 Gemini 中即可获得可导入的文件夹方案。",
     "description": "AI 整理复制按钮下方的提示文字"
@@ -1994,5 +2038,57 @@
   "floatingPanelGestureHint": {
     "message": "双击重命名 · 右键可置顶/改色/删除。",
     "description": "Floating folder panel hint explaining folder gestures and context menu actions"
+  },
+  "responseCompleteNotification": {
+    "message": "Gemini 思考完成通知",
+    "description": "Gemini 回答完成系统通知开关"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "当 Gemini 完整输出回答后，发送系统通知。",
+    "description": "Gemini 回答完成系统通知提示"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "Safari 不支持扩展系统通知；返回页面时 Voyager 会显示页面内提示。",
+    "description": "Safari 上 Gemini 回答完成通知提示"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Gemini 思考完成",
+    "description": "Gemini 完成回答时的系统通知正文"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "新回复已完成",
+    "description": "Gemini 回复在屏幕外完成时的前台提示文本"
+  },
+  "pluginsTitle": {
+    "message": "插件",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "启用增强其他 AI 网站的插件。开启时会请求该网站的访问权限。",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "源码",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "网站权限被拒绝，插件无法运行。",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "此浏览器不支持——无法授予该插件所需的网站权限。",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "正在加载插件…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "暂无可用插件。",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "刷新插件",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

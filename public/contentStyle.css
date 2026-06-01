@@ -3,6 +3,7 @@
 .gv-pm-header,
 .gv-pm-list,
 .gv-pm-item,
+.gv-pm-starred-item,
 .gv-pm-chip,
 .gv-pm-tag,
 .gv-pm-footer,
@@ -1162,6 +1163,10 @@ body.gv-rtl .gv-persistent-export-toolbar {
   max-width: calc(100vw - 20px);
   max-height: min(75vh, 600px);
   overflow: hidden;
+  /* Pin a base font-size so the panel never inherits the host page's (which is
+     larger on Claude/ChatGPT, and oversized on Gemini too) — keeps the Add
+     button and all panel text consistent across every platform. */
+  font-size: 14px;
   --gv-pm-surface: oklch(0.995 0.002 250);
   border-radius: 18px;
   background: oklch(0.995 0.002 250);
@@ -1395,6 +1400,24 @@ body.dark-theme .gv-pm-version:hover {
   font-weight: 500;
   box-shadow: 0 1px 3px oklch(0 0 0 / 0.05);
   transition: all 0.2s ease;
+}
+
+/* Draw our OWN dropdown chevron for the language <select>. The native arrow is
+   inconsistent across hosts — ChatGPT's reset hides it, others place it tight to
+   the edge. `appearance:none` removes the native one; a self-contained SVG sits
+   at a controlled inset (mirrored under RTL). !important only on the arrow layer
+   + appearance, so each theme keeps its own background-color. */
+.gv-pm-lang {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  padding-inline-end: 30px !important;
+}
+
+body.gv-rtl .gv-pm-lang {
+  background-position: left 10px center !important;
 }
 
 .gv-pm-lang:hover {
@@ -1730,8 +1753,8 @@ body.dark-theme .gv-pm-search input[type='search']::placeholder {
 }
 
 .gv-pm-tag.active {
-  background: oklch(0.55 0.17 155 / 0.18);
-  color: oklch(0.85 0.1 155);
+  background: var(--gv-pm-brand-soft, oklch(0.55 0.17 155 / 0.18));
+  color: var(--gv-pm-brand, oklch(0.85 0.1 155));
   font-weight: 600;
 }
 
@@ -1750,8 +1773,8 @@ body.light-theme .gv-pm-tag:hover {
 
 .theme-host.light-theme .gv-pm-tag.active,
 body.light-theme .gv-pm-tag.active {
-  background: oklch(0.55 0.17 155 / 0.12);
-  color: oklch(0.4 0.15 155);
+  background: var(--gv-pm-brand-soft, oklch(0.55 0.17 155 / 0.12));
+  color: var(--gv-pm-brand, oklch(0.4 0.15 155));
 }
 
 .theme-host.dark-theme .gv-pm-tag,
@@ -1769,8 +1792,8 @@ body.dark-theme .gv-pm-tag:hover {
 
 .theme-host.dark-theme .gv-pm-tag.active,
 body.dark-theme .gv-pm-tag.active {
-  background: oklch(0.7 0.16 155 / 0.18);
-  color: oklch(0.85 0.1 155);
+  background: var(--gv-pm-brand-soft, oklch(0.7 0.16 155 / 0.18));
+  color: var(--gv-pm-brand, oklch(0.85 0.1 155));
 }
 
 .gv-pm-add-form {
@@ -1996,6 +2019,178 @@ body.dark-theme .gv-pm-cancel:hover {
   padding: 24px 16px;
   text-align: center;
   line-height: 1.5;
+}
+
+.gv-pm-starred-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 28px;
+  align-items: start;
+  gap: 10px;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.gv-pm-starred-item + .gv-pm-starred-item {
+  margin-top: 6px;
+}
+
+.gv-pm-starred-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+  transform: translateY(-1px);
+}
+
+.gv-pm-starred-icon {
+  color: #f59e0b;
+  font-size: 16px;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+
+.gv-pm-starred-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gv-pm-starred-title {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gv-pm-starred-content {
+  color: rgba(229, 231, 235, 0.78);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.gv-pm-starred-meta {
+  color: rgba(229, 231, 235, 0.52);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.gv-pm-starred-remove {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(229, 231, 235, 0.42);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.gv-pm-starred-item:hover .gv-pm-starred-remove,
+.gv-pm-starred-remove:focus-visible {
+  opacity: 1;
+}
+
+.gv-pm-starred-remove:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.gv-pm-starred-remove::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  display: block;
+  background: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>')
+    center / contain no-repeat;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="black"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z"/></svg>')
+    center / contain no-repeat;
+}
+
+.theme-host.light-theme .gv-pm-starred-item,
+body.light-theme .gv-pm-starred-item,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-item {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1f2937;
+}
+
+.theme-host.light-theme .gv-pm-starred-item:hover,
+body.light-theme .gv-pm-starred-item:hover,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-item:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.theme-host.light-theme .gv-pm-starred-content,
+body.light-theme .gv-pm-starred-content,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-content {
+  color: rgba(31, 41, 55, 0.72);
+}
+
+.theme-host.light-theme .gv-pm-starred-meta,
+body.light-theme .gv-pm-starred-meta,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-meta {
+  color: rgba(31, 41, 55, 0.5);
+}
+
+.theme-host.light-theme .gv-pm-starred-remove,
+body.light-theme .gv-pm-starred-remove,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-remove {
+  color: rgba(31, 41, 55, 0.4);
+}
+
+.theme-host.light-theme .gv-pm-starred-remove:hover,
+body.light-theme .gv-pm-starred-remove:hover,
+.gv-pm-panel[data-gv-theme='light'] .gv-pm-starred-remove:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-item {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-content {
+  color: rgba(229, 231, 235, 0.78);
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-meta {
+  color: rgba(229, 231, 235, 0.52);
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-remove {
+  color: rgba(229, 231, 235, 0.42);
+}
+
+.gv-pm-panel[data-gv-theme='dark'] .gv-pm-starred-remove:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
 }
 
 .gv-pm-item {
@@ -3018,8 +3213,8 @@ body.dark-theme .gv-pm-notice.err {
 }
 
 .gv-pm-panel[data-gv-theme='dark'] .gv-pm-tag.active {
-  background: oklch(0.7 0.16 155 / 0.18);
-  color: oklch(0.85 0.1 155);
+  background: var(--gv-pm-brand-soft, oklch(0.7 0.16 155 / 0.18));
+  color: var(--gv-pm-brand, oklch(0.85 0.1 155));
 }
 
 .gv-pm-panel[data-gv-theme='dark'] .gv-pm-input-text,
@@ -3286,8 +3481,8 @@ body.dark-theme .gv-pm-notice.err {
 }
 
 .gv-pm-panel[data-gv-theme='light'] .gv-pm-tag.active {
-  background: oklch(0.55 0.17 155 / 0.12);
-  color: oklch(0.4 0.15 155);
+  background: var(--gv-pm-brand-soft, oklch(0.55 0.17 155 / 0.12));
+  color: var(--gv-pm-brand, oklch(0.4 0.15 155));
 }
 
 .gv-pm-panel[data-gv-theme='light'] .gv-pm-input-text,
@@ -3900,6 +4095,23 @@ body.light-theme {
     var(--folder-selected-glow) 0%,
     transparent 100%
   ) !important;
+  transition: background 200ms ease;
+}
+
+/* Gemini's lr26 sidebar overhaul wraps the conversation row in
+ * <gem-nav-list-item data-test-id="conversation"> with the visible row
+ * (<a class="mat-mdc-list-item gem-nav-list-item">) nested inside. The inner
+ * <a> paints its own opaque background, which covers the gradient we set on
+ * the host. Propagate the gradient down to the inner <a> so the highlight is
+ * actually visible — without this only the ::before accent stripe peeks out. */
+[data-test-id='conversation'].gv-conversation-selected > a.mat-mdc-list-item,
+[data-test-id='conversation'].gv-conversation-selected > a.gem-nav-list-item {
+  background: linear-gradient(
+    to right,
+    var(--folder-selected-glow) 0%,
+    transparent 100%
+  ) !important;
+  border-radius: 12px !important;
   transition: background 200ms ease;
 }
 
@@ -5237,6 +5449,16 @@ html[data-color-scheme='light'] .gv-copy-toast-error {
     0 2px 8px rgba(234, 67, 53, 0.2);
 }
 
+/* Themed platforms (Claude / ChatGPT / any plugin-declared theme): tint the
+   "Copied" toast with the brand colour (clay / sky blue) instead of Gemini's
+   green. The gv-platform-themed class + --gv-pm-brand live on the document root. */
+:root.gv-platform-themed .gv-copy-toast-success {
+  background: linear-gradient(135deg, var(--gv-pm-brand) 0%, var(--gv-pm-brand-hover) 100%);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    0 2px 8px var(--gv-pm-brand-soft);
+}
+
 /* AI Studio formula hover effect - make ms-katex elements clickable */
 ms-katex {
   cursor: pointer !important;
@@ -5263,6 +5485,26 @@ ms-katex:hover .katex {
 html[data-color-scheme='light'] ms-katex:hover,
 body.light-theme ms-katex:hover {
   background-color: rgba(66, 133, 244, 0.08) !important;
+}
+
+/* ChatGPT / Claude formula hover effect. KaTeX here is rendered as a bare
+   .katex (no ms-katex / .math-inline wrapper), so the rules above never reach
+   it — that's why hovering a formula on these sites showed no feedback. Tint it
+   with the platform brand colour to signal "click to copy", matching the toast
+   and prompt manager. NB: KaTeX is size-sensitive, so we deliberately add NO
+   padding — only border-radius + background + box-shadow, none of which shift
+   layout or disturb the maths rendering. */
+:root.gv-platform-themed .katex {
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+:root.gv-platform-themed .katex:hover {
+  background-color: var(--gv-pm-brand-soft);
+  box-shadow: 0 0 0 1px var(--gv-pm-brand);
 }
 
 /* ==========================================================================
@@ -7295,6 +7537,196 @@ body[data-color-scheme='dark'] .gv-export-progress-desc {
 }
 
 /* ===== Changelog Modal ===== */
+
+.gv-edge-final-version-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+}
+
+.gv-edge-final-version-notice__dialog {
+  width: min(92vw, 460px);
+  max-height: min(80vh, 520px);
+  overflow: auto;
+  border: 1px solid #dfe4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+}
+
+.gv-edge-final-version-notice__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 20px 12px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.gv-edge-final-version-notice__title {
+  flex: 1;
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.gv-edge-final-version-notice__close {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #5f6b7a;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gv-edge-final-version-notice__close:hover {
+  background: #f1f5f9;
+  color: #172033;
+}
+
+.gv-edge-final-version-notice__body {
+  padding: 16px 20px 8px;
+  color: #344054;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.gv-edge-final-version-notice__body p {
+  margin: 0 0 12px;
+}
+
+.gv-edge-final-version-notice__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px 20px;
+}
+
+.gv-edge-final-version-notice__btn {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.gv-edge-final-version-notice__btn--secondary {
+  border-color: #d0d7e2;
+  background: #ffffff;
+  color: #344054;
+}
+
+.gv-edge-final-version-notice__btn--secondary:hover {
+  background: #f8fafc;
+}
+
+.gv-edge-final-version-notice__btn--primary {
+  background: #1a73e8;
+  color: #ffffff;
+}
+
+.gv-edge-final-version-notice__btn--primary:hover {
+  background: #1557b0;
+}
+
+html.dark .gv-edge-final-version-notice__dialog,
+body.dark-theme .gv-edge-final-version-notice__dialog,
+.theme-host.dark-theme .gv-edge-final-version-notice__dialog,
+[data-theme='dark'] .gv-edge-final-version-notice__dialog,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__dialog {
+  border-color: #3c4043;
+  background: #202124;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+html.dark .gv-edge-final-version-notice__header,
+body.dark-theme .gv-edge-final-version-notice__header,
+.theme-host.dark-theme .gv-edge-final-version-notice__header,
+[data-theme='dark'] .gv-edge-final-version-notice__header,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__header {
+  border-bottom-color: #3c4043;
+}
+
+html.dark .gv-edge-final-version-notice__title,
+body.dark-theme .gv-edge-final-version-notice__title,
+.theme-host.dark-theme .gv-edge-final-version-notice__title,
+[data-theme='dark'] .gv-edge-final-version-notice__title,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__title {
+  color: #e8eaed;
+}
+
+html.dark .gv-edge-final-version-notice__body,
+body.dark-theme .gv-edge-final-version-notice__body,
+.theme-host.dark-theme .gv-edge-final-version-notice__body,
+[data-theme='dark'] .gv-edge-final-version-notice__body,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__body {
+  color: #cbd5e1;
+}
+
+html.dark .gv-edge-final-version-notice__close,
+body.dark-theme .gv-edge-final-version-notice__close,
+.theme-host.dark-theme .gv-edge-final-version-notice__close,
+[data-theme='dark'] .gv-edge-final-version-notice__close,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__close {
+  color: #cbd5e1;
+}
+
+html.dark .gv-edge-final-version-notice__close:hover,
+body.dark-theme .gv-edge-final-version-notice__close:hover,
+.theme-host.dark-theme .gv-edge-final-version-notice__close:hover,
+[data-theme='dark'] .gv-edge-final-version-notice__close:hover,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__close:hover {
+  background: #303134;
+  color: #e8eaed;
+}
+
+html.dark .gv-edge-final-version-notice__btn--secondary,
+body.dark-theme .gv-edge-final-version-notice__btn--secondary,
+.theme-host.dark-theme .gv-edge-final-version-notice__btn--secondary,
+[data-theme='dark'] .gv-edge-final-version-notice__btn--secondary,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__btn--secondary {
+  border-color: #4b5563;
+  background: #202124;
+  color: #e8eaed;
+}
+
+html.dark .gv-edge-final-version-notice__btn--secondary:hover,
+body.dark-theme .gv-edge-final-version-notice__btn--secondary:hover,
+.theme-host.dark-theme .gv-edge-final-version-notice__btn--secondary:hover,
+[data-theme='dark'] .gv-edge-final-version-notice__btn--secondary:hover,
+[data-color-scheme='dark'] .gv-edge-final-version-notice__btn--secondary:hover {
+  background: #303134;
+}
+
+@media (max-width: 520px) {
+  .gv-edge-final-version-notice {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .gv-edge-final-version-notice__actions {
+    flex-direction: column-reverse;
+  }
+
+  .gv-edge-final-version-notice__btn {
+    width: 100%;
+  }
+}
 
 .gv-changelog-overlay {
   position: fixed;
@@ -10582,4 +11014,114 @@ body.gv-hide-input-halo chat-window::before {
 body.gv-hide-input-halo chat-loading-animation,
 body.gv-hide-input-halo .nl-canvas {
   display: none !important;
+}
+
+/* ============================================================================
+   Platform-adaptive accent. On a themed platform (Claude / ChatGPT, or any
+   plugin that declares `theme.brand`), src/pages/content/platformTheme injects
+   --gv-pm-brand on the document root (<html>) + adds .gv-platform-themed there.
+   We derive the hover / soft / foreground shades from that ONE variable via
+   color-mix; the rules below repaint Voyager UI with !important so they win over
+   every per-theme variant — including the high-specificity
+   .gv-pm-panel[data-gv-theme=...] ones that a body-scoped override couldn't beat.
+   Single source of truth for the colour is data (adapter.brandColor / plugin
+   theme), not this file. Gemini / AI Studio get no variable/class → native green.
+   ============================================================================ */
+:root.gv-platform-themed {
+  /* --gv-pm-brand is injected at runtime by applyBrandTheme(); derive the rest. */
+  --gv-pm-brand-hover: color-mix(in srgb, var(--gv-pm-brand) 82%, black);
+  --gv-pm-brand-soft: color-mix(in srgb, var(--gv-pm-brand) 14%, transparent);
+  --gv-pm-brand-fg: #ffffff;
+}
+
+/* Solid accent surfaces (filled Add/Save buttons + floating trigger): brand
+   background, WHITE text/icon, neutral shadow so no green glow leaks through. */
+:root.gv-platform-themed .gv-pm-add,
+:root.gv-platform-themed .gv-pm-save,
+:root.gv-platform-themed .gv-pm-trigger {
+  background: var(--gv-pm-brand) !important;
+  border-color: var(--gv-pm-brand) !important;
+  color: var(--gv-pm-brand-fg) !important;
+  box-shadow:
+    0 4px 16px rgb(0 0 0 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.15) !important;
+}
+:root.gv-platform-themed .gv-pm-add:hover,
+:root.gv-platform-themed .gv-pm-save:hover,
+:root.gv-platform-themed .gv-pm-trigger:hover {
+  background: var(--gv-pm-brand-hover) !important;
+  border-color: var(--gv-pm-brand-hover) !important;
+}
+
+/* Prompt Manager copy/insert toast: follows the host platform too. */
+:root.gv-platform-themed .gv-pm-notice.ok {
+  background: var(--gv-pm-brand) !important;
+  color: var(--gv-pm-brand-fg) !important;
+  box-shadow:
+    0 4px 16px rgb(0 0 0 / 0.18),
+    0 2px 8px var(--gv-pm-brand-soft) !important;
+}
+
+/* Ghost / soft accent surfaces (footer Starred-Library + Official-Docs buttons,
+   and the compact-view grid toggle): faint brand tint + brand text/border. */
+:root.gv-platform-themed .gv-pm-backup-btn,
+:root.gv-platform-themed .gv-pm-website-btn,
+:root.gv-platform-themed .gv-pm-view-mode.gv-pm-view-mode-compact {
+  background: var(--gv-pm-brand-soft) !important;
+  border-color: var(--gv-pm-brand) !important;
+  color: var(--gv-pm-brand) !important;
+}
+:root.gv-platform-themed .gv-pm-backup-btn:hover,
+:root.gv-platform-themed .gv-pm-website-btn:hover,
+:root.gv-platform-themed .gv-pm-backup-btn:active,
+:root.gv-platform-themed .gv-pm-website-btn:active {
+  background: color-mix(in srgb, var(--gv-pm-brand) 22%, transparent) !important;
+  border-color: var(--gv-pm-brand) !important;
+  color: var(--gv-pm-brand) !important;
+}
+
+/* Hover hints that only tint a border (view-mode toggle, lock button). */
+:root.gv-platform-themed .gv-pm-view-mode:hover,
+:root.gv-platform-themed .gv-pm-lock:hover {
+  border-color: var(--gv-pm-brand) !important;
+}
+
+/* Search field focus ring. */
+:root.gv-platform-themed .gv-pm-search input[type='search']:focus {
+  border-color: var(--gv-pm-brand) !important;
+  box-shadow: 0 0 0 3px var(--gv-pm-brand-soft) !important;
+}
+
+/* Version + language pickers: brand-tint their hover/focus highlight. */
+:root.gv-platform-themed .gv-pm-version:hover,
+:root.gv-platform-themed .gv-pm-version-outdated,
+:root.gv-platform-themed .gv-pm-lang:hover,
+:root.gv-platform-themed .gv-pm-lang:focus,
+:root.gv-platform-themed .gv-pm-lang:focus-within {
+  border-color: var(--gv-pm-brand) !important;
+}
+
+/* Accent text + faint brand pill on the panel surface (list tag chips). */
+:root.gv-platform-themed .gv-pm-chip,
+:root.gv-platform-themed .gv-pm-trigger-new::after {
+  color: var(--gv-pm-brand) !important;
+}
+:root.gv-platform-themed .gv-pm-chip {
+  background: var(--gv-pm-brand-soft) !important;
+}
+:root.gv-platform-themed .gv-pm-chip:hover {
+  background: color-mix(in srgb, var(--gv-pm-brand) 24%, transparent) !important;
+}
+
+/* Active filter tag + active lock: brand text on a faint brand pill. */
+:root.gv-platform-themed .gv-pm-tag.active,
+:root.gv-platform-themed .gv-pm-lock.active {
+  background: var(--gv-pm-brand-soft) !important;
+  border-color: var(--gv-pm-brand) !important;
+  color: var(--gv-pm-brand) !important;
+}
+
+/* Active lock's focus-ring glow follows the brand too. */
+:root.gv-platform-themed .gv-pm-lock.active {
+  box-shadow: 0 0 0 3px var(--gv-pm-brand-soft) !important;
 }

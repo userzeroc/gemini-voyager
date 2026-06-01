@@ -231,6 +231,34 @@
     "message": "名前（任意）",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "プロンプトマネージャー",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "スター付きライブラリ",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "スター付きメッセージを検索",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "検索に一致するスター付きメッセージはありません",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "無題の会話",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "スター付きメッセージを開く",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "スター付きメッセージを読み込めませんでした",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "ダークモードに切替",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "フォルダから削除",
     "description": "Remove conversation button tooltip"
+  },
+  "folder_remove_conversation_action": {
+    "message": "削除",
+    "description": "Short confirmation button label for removing a conversation from a folder"
   },
   "folder_remove_conversation_confirm": {
     "message": "「{title}」をこのフォルダから削除しますか？",
@@ -1147,6 +1179,14 @@
     "message": "画面に表示される画像も処理します。動作はやや重く、処理中に画像が一瞬ちらつくことがあります。",
     "description": "Hint for the preview-time watermark removal toggle"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "推奨",
+    "description": "Inline badge highlighting the recommended (download-time) watermark removal option"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "不安定",
+    "description": "Inline badge warning that the preview-time watermark removal option is unstable"
+  },
   "nanobananaDownloadTooltip": {
     "message": "透かしなし画像をダウンロード (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "失敗 — 先に Gemini を開いてください",
     "description": "AI整理プロンプトのコピー失敗時のエラー"
   },
+  "aiOrgNoConversations": {
+    "message": "会話が見つかりません — チャット一覧を開いてスクロールしてから再試行してください",
+    "description": "AI 整理で会話を読み取れなかったときのボタン文言"
+  },
   "aiOrgCopyHint": {
     "message": "すべての会話とフォルダ構造をプロンプトとしてコピーします。Gemini に貼り付けて、インポート可能なフォルダプランを取得できます。",
     "description": "AI整理コピーボタンの下のヒントテキスト"
@@ -1994,5 +2038,57 @@
   "folder_new_chat_in_folder": {
     "message": "このフォルダで新規チャット",
     "description": "Folder context menu item to create a new chat and auto-assign it to this folder"
+  },
+  "responseCompleteNotification": {
+    "message": "Gemini 完了通知",
+    "description": "Gemini response completion notification toggle"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "Gemini の回答が完了したらシステム通知を送信します。",
+    "description": "Gemini response completion notification hint"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "Safari は拡張機能のシステム通知に対応していないため、戻ったときにページ内通知を表示します。",
+    "description": "Safari-specific hint for response completion notifications"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Gemini の回答が完了しました",
+    "description": "Gemini の回答完了時に表示するシステム通知本文"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "新しい回答が完了しました",
+    "description": "Gemini の回答が画面外で完了したときの前面トースト文言"
+  },
+  "pluginsTitle": {
+    "message": "プラグイン",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "他の AI サイトを強化するプラグインを有効化します。オンにするとそのサイトへのアクセス権限を要求します。",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "ソース",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "サイトの権限が拒否されたため、プラグインを実行できません。",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "このブラウザでは利用できません。プラグインに必要なサイト権限を付与できません。",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "プラグインを読み込み中…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "利用できるプラグインはありません。",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "プラグインを更新",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

@@ -231,6 +231,34 @@
     "message": "이름 (선택 사항)",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "프롬프트 관리자",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "별표 보관함",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "별표 메시지 검색",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "검색과 일치하는 별표 메시지가 없습니다",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "제목 없는 대화",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "별표 메시지 열기",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "별표 메시지를 불러오지 못했습니다",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "다크 모드로 전환",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "폴더에서 제거",
     "description": "Remove conversation button tooltip"
+  },
+  "folder_remove_conversation_action": {
+    "message": "제거",
+    "description": "Short confirmation button label for removing a conversation from a folder"
   },
   "folder_remove_conversation_confirm": {
     "message": "이 폴더에서 \"{title}\"을 (를) 제거하시겠습니까?",
@@ -1147,6 +1179,14 @@
     "message": "화면에 표시되는 이미지도 함께 처리합니다. 처리 속도는 더 느려지며, 처리 중 이미지가 잠깐 깜박일 수 있습니다.",
     "description": "Hint for the preview-time watermark removal toggle"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "권장",
+    "description": "Inline badge highlighting the recommended (download-time) watermark removal option"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "불안정",
+    "description": "Inline badge warning that the preview-time watermark removal option is unstable"
+  },
   "nanobananaDownloadTooltip": {
     "message": "워터마크 없는 이미지 다운로드 (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "실패 — 먼저 Gemini를 열어주세요",
     "description": "AI 정리 프롬프트 복사 실패 시 에러"
   },
+  "aiOrgNoConversations": {
+    "message": "대화를 찾을 수 없습니다 — 채팅 목록을 열고 스크롤한 후 다시 시도하세요",
+    "description": "AI 정리에서 대화를 읽지 못했을 때 표시되는 버튼 텍스트"
+  },
   "aiOrgCopyHint": {
     "message": "모든 대화와 폴더 구조를 프롬프트로 복사합니다. Gemini에 붙여넣어 가져올 수 있는 폴더 계획을 얻으세요.",
     "description": "AI 정리 복사 버튼 아래 힌트 텍스트"
@@ -1994,5 +2038,57 @@
   "folder_new_chat_in_folder": {
     "message": "이 폴더에서 새 채팅",
     "description": "Folder context menu item to create a new chat and auto-assign it to this folder"
+  },
+  "responseCompleteNotification": {
+    "message": "Gemini 응답 완료 알림",
+    "description": "Gemini response completion notification toggle"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "Gemini가 답변을 완료하면 시스템 알림을 보냅니다.",
+    "description": "Gemini response completion notification hint"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "Safari는 확장 프로그램의 시스템 알림을 지원하지 않습니다. 돌아오면 Voyager가 페이지 안에 알림을 표시합니다.",
+    "description": "Safari-specific hint for response completion notifications"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Gemini 응답 완료",
+    "description": "Gemini가 답변을 완료했을 때의 시스템 알림 본문"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "새 응답이 완료되었습니다",
+    "description": "Gemini 응답이 화면 밖에서 완료되었을 때의 전면 토스트 문구"
+  },
+  "pluginsTitle": {
+    "message": "플러그인",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "다른 AI 사이트를 향상하는 플러그인을 활성화합니다. 켜면 해당 사이트 접근 권한을 요청합니다.",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "소스",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "사이트 권한이 거부되어 플러그인을 실행할 수 없습니다.",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "이 브라우저에서는 지원되지 않습니다. 플러그인에 필요한 사이트 권한을 부여할 수 없습니다.",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "플러그인 불러오는 중…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "사용 가능한 플러그인이 없습니다.",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "플러그인 새로고침",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

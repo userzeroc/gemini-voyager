@@ -19,6 +19,12 @@ import { getTranslationSync, getTranslationSyncUnsafe, initI18n } from '@/utils/
 import { mergeFolderData, mergeTimelineHierarchy } from '@/utils/merge';
 
 import {
+  MENU_PANEL_SELECTOR as CONVERSATION_MENU_PANEL_SELECTOR,
+  type ConversationMenuContext,
+  getConversationMenuContext,
+  injectConversationMenuMoveToFolderButton,
+} from '../export/conversationMenuInjection';
+import {
   getTimelineHierarchyStorageKey,
   getTimelineHierarchyStorageKeysToRead,
   resolveTimelineHierarchyDataForStorageScope,
@@ -40,7 +46,6 @@ import {
   shouldShowHideArchivedNudge,
   unmountHideArchivedNudge,
 } from './hideArchivedNudge';
-import { createMoveToFolderMenuItem } from './moveToFolderMenuItem';
 import {
   type IFolderStorageAdapter,
   createFolderStorageAdapter,
@@ -49,6 +54,16 @@ import type { ConversationReference, DragData, Folder, FolderData } from './type
 
 const STORAGE_KEY = 'gvFolderData';
 const IS_DEBUG = false; // Set to true to enable debug logging
+// Native ⋮ menu content (the action items) renders asynchronously after the
+// panel element appears, so injection is retried a few times before giving up.
+const MOVE_MENU_INJECTION_RETRY_LIMIT = 8;
+const MOVE_MENU_INJECTION_RETRY_DELAY_MS = 80;
+const CONVERSATION_MENU_TRIGGER_SELECTOR =
+  '[data-test-id="actions-menu-button"], [data-test-id="conversation-actions-menu-icon-button"]';
+// AI Organize: the lr26 sidebar populates conversation rows lazily, so wait
+// briefly for at least one row to gain its link before collecting (see #725).
+const AI_ORG_COLLECT_TIMEOUT_MS = 3000;
+const AI_ORG_COLLECT_POLL_MS = 150;
 const ROOT_CONVERSATIONS_ID = '__root_conversations__'; // Special ID for root-level conversations
 const NOTIFICATION_TIMEOUT_MS = 10000; // Duration to show data loss notification
 const FOLDER_TREE_INDENT_MIN = -8;
@@ -157,7 +172,7 @@ export class FolderManager {
   // the `expandable-section[data-test-id="chats-expandable-section"]` element
   // wholesale, which leaves our folder container stranded below the new section
   // even though it was inserted above the old one. The position enforcer below
-  // (`enforceFolderAboveRecents`) runs on any sidebar childList mutation,
+  // (`enforceFolderAboveRecents`) watches the anchor section's direct parent,
   // batched via requestAnimationFrame, and is a no-op once the container is
   // already correctly placed.
   private positionObserver: MutationObserver | null = null;
@@ -204,10 +219,11 @@ export class FolderManager {
   // burst of mutations every time the user clicks a conversation row (it
   // re-renders rows to update active state). Doing per-element setup work
   // synchronously inside the observer callback caused noticeable click
-  // jank — issue #678. We now coalesce mutations to the microtask boundary
+  // jank — issue #678. We now coalesce mutations to the next animation frame
   // and dedupe by element/conversationId before doing any work.
   private mutationBatchQueue: MutationRecord[] = [];
   private mutationFlushScheduled: boolean = false;
+  private mutationFlushRafId: number | null = null;
   private isDestroyed: boolean = false; // Flag to prevent callbacks after destruction
   private reinitializePromise: Promise<void> | null = null; // Prevent duplicate reinitialization cascades
   private activeColorPicker: HTMLElement | null = null; // Currently open color picker dialog
@@ -228,6 +244,13 @@ export class FolderManager {
   private routeChangeCleanup: (() => void) | null = null;
   private sidebarClickListener: ((e: Event) => void) | null = null;
   private nativeMenuObserver: MutationObserver | null = null;
+  // Capture-phase listener that injects "Move to folder" when a conversation ⋮
+  // menu trigger is clicked (belt-and-suspenders alongside nativeMenuObserver).
+  private moveMenuTriggerHandler: ((event: Event) => void) | null = null;
+  private moveMenuKeydownHandler: ((event: Event) => void) | null = null;
+  // Tracks the last input modality so menu-close focus handling stays a11y-safe:
+  // pointer dismissals drop trigger focus, keyboard dismissals preserve it.
+  private lastInputModality: 'pointer' | 'keyboard' = 'pointer';
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null; // For exiting multi-select on outside click
 
   // Batch delete related properties
@@ -421,12 +444,14 @@ export class FolderManager {
       this.conversationObserver.disconnect();
       this.conversationObserver = null;
     }
+    this.cancelMutationBatchFlush();
     this.mutationBatchQueue.length = 0;
 
     if (this.nativeMenuObserver) {
       this.nativeMenuObserver.disconnect();
       this.nativeMenuObserver = null;
     }
+    this.teardownMoveMenuTriggerListener();
 
     this.teardownPositionEnforcer();
     this.cleanupNotebooksAnchorButton();
@@ -490,14 +515,130 @@ export class FolderManager {
     }
 
     // Execute custom cleanup tasks
-    this.cleanupTasks.forEach((task) => task());
-    this.cleanupTasks = [];
+    this.runCleanupTasks();
 
     this.debug('Cleanup complete');
   }
 
   private addCleanupTask(task: () => void): void {
     this.cleanupTasks.push(task);
+  }
+
+  private runCleanupTasks(): void {
+    const tasks = this.cleanupTasks;
+    this.cleanupTasks = [];
+
+    tasks.forEach((task) => {
+      try {
+        task();
+      } catch (error) {
+        this.debugWarn('Folder runtime cleanup task failed:', error);
+      }
+    });
+  }
+
+  private teardownMountedFolderRuntime(): void {
+    this.runCleanupTasks();
+
+    this.pendingRemovals.forEach((timerId) => clearTimeout(timerId));
+    this.pendingRemovals.clear();
+
+    if (this.longPressTimeout) {
+      clearTimeout(this.longPressTimeout);
+      this.longPressTimeout = null;
+    }
+
+    if (this.folderNameClickTimeout !== null) {
+      clearTimeout(this.folderNameClickTimeout);
+      this.folderNameClickTimeout = null;
+    }
+
+    this.clearNativeTitleSyncTimer();
+
+    if (this.navPoller) {
+      clearInterval(this.navPoller);
+      this.navPoller = null;
+    }
+
+    if (this.folderRecoveryTimer !== null) {
+      clearInterval(this.folderRecoveryTimer);
+      this.folderRecoveryTimer = null;
+    }
+    this.folderRecoveryInFlight = false;
+    this.floatingFallbackActive = false;
+
+    if (this.sideNavObserver) {
+      this.sideNavObserver.disconnect();
+      this.sideNavObserver = null;
+    }
+
+    if (this.conversationObserver) {
+      this.conversationObserver.disconnect();
+      this.conversationObserver = null;
+    }
+    this.cancelMutationBatchFlush();
+    this.mutationBatchQueue.length = 0;
+
+    if (this.nativeMenuObserver) {
+      this.nativeMenuObserver.disconnect();
+      this.nativeMenuObserver = null;
+    }
+    this.teardownMoveMenuTriggerListener();
+
+    this.teardownPositionEnforcer();
+    this.cleanupNotebooksAnchorButton();
+    this.clearConversationReorderIndicator();
+    this.stopFloatingMode();
+
+    if (this.routeChangeCleanup) {
+      try {
+        this.routeChangeCleanup();
+      } catch (error) {
+        this.debugWarn('Route change cleanup failed:', error);
+      }
+      this.routeChangeCleanup = null;
+    }
+
+    if (this.sidebarClickListener && this.sidebarContainer) {
+      try {
+        this.sidebarContainer.removeEventListener('click', this.sidebarClickListener, true);
+      } catch (error) {
+        this.debugWarn('Sidebar click listener cleanup failed:', error);
+      }
+      this.sidebarClickListener = null;
+    }
+
+    this.removeOutsideClickHandler();
+    this.closeActiveImportExportMenu();
+    this.closeActiveImportDialog();
+    this.closeFolderConversationMenus();
+    this.clearActiveFolderInput();
+
+    if (this.activeColorPicker) {
+      this.activeColorPicker.remove();
+      if (this.activeColorPickerCloseHandler) {
+        document.removeEventListener('click', this.activeColorPickerCloseHandler);
+        this.activeColorPickerCloseHandler = null;
+      }
+      this.activeColorPicker = null;
+      this.activeColorPickerFolderId = null;
+    }
+
+    if (this.containerElement) {
+      this.containerElement.remove();
+      this.containerElement = null;
+    }
+    if (this.multiSelectHostElement) {
+      this.multiSelectHostElement.remove();
+      this.multiSelectHostElement = null;
+    }
+
+    this.selectedConversations.clear();
+    this.isMultiSelectMode = false;
+    this.multiSelectSource = null;
+    this.multiSelectFolderId = null;
+    this.sidebarContainer = null;
+    this.recentSection = null;
   }
 
   private clearActiveFolderInput(): void {
@@ -800,6 +941,7 @@ export class FolderManager {
    * being open.
    */
   private async startFloatingMode(): Promise<void> {
+    if (this.isDestroyed || !this.folderEnabled) return;
     if (this.floatingModeActive) return;
     this.floatingModeActive = true;
     this.debug('Entering floating mode');
@@ -879,6 +1021,7 @@ export class FolderManager {
   }
 
   private async openFloatingPanel(): Promise<void> {
+    if (this.isDestroyed || !this.folderEnabled) return;
     if (this.floatingPanelHandle) return;
     unmountFloatingModeNudge();
     // Only one entry point visible at a time — FAB hides when the panel is up.
@@ -913,6 +1056,8 @@ export class FolderManager {
       if (isExtensionContextInvalidatedError(error)) return;
       this.debugWarn('Failed to read floating-mode position/size:', error);
     }
+
+    if (this.isDestroyed || !this.folderEnabled) return;
 
     // All mutation callbacks share the same tail: persist to storage and push
     // a fresh snapshot into the floating panel. Factored out so each callback
@@ -1191,10 +1336,19 @@ export class FolderManager {
     });
   }
 
+  private getPositionObserverTarget(): HTMLElement | null {
+    const anchorSection = this.findFolderAnchorCandidate();
+    if (anchorSection?.parentElement instanceof HTMLElement) {
+      return anchorSection.parentElement;
+    }
+    return this.sidebarContainer;
+  }
+
   /**
-   * Watch the sidebar for any childList changes and re-enforce position on the
-   * next animation frame. Disconnects any prior observer so this is safe to
-   * call from re-init paths.
+   * Watch the section list for anchor swaps and re-enforce position on the next
+   * animation frame. Keep this scoped to the anchor's direct parent: Gemini can
+   * add hundreds of nested nodes while expanding Recents, and those should not
+   * wake the position enforcer.
    */
   private setupPositionEnforcer(): void {
     if (!this.sidebarContainer) return;
@@ -1202,12 +1356,14 @@ export class FolderManager {
       this.positionObserver.disconnect();
       this.positionObserver = null;
     }
+    const observeTarget = this.getPositionObserverTarget();
+    if (!observeTarget) return;
+
     this.positionObserver = new MutationObserver(() => {
       this.scheduleEnforceFolderAboveRecents();
     });
-    this.positionObserver.observe(this.sidebarContainer, {
+    this.positionObserver.observe(observeTarget, {
       childList: true,
-      subtree: true,
     });
   }
 
@@ -2228,6 +2384,27 @@ export class FolderManager {
     element.addEventListener(
       'click',
       (e) => {
+        // Never swallow clicks on the trailing ⋮ menu button — those need to
+        // open the per-row actions menu (rename / delete / move / etc.).
+        // Without this guard, our capture-phase stopPropagation below silently
+        // kills the menu trigger during programmatic batch-delete (the
+        // moreButton.click() never reaches Material's menu, so the menu never
+        // opens and waitForDeleteButtonAndClick times out at 3s every row).
+        if (
+          e.target instanceof Element &&
+          e.target.closest(
+            '[data-test-id="actions-menu-button"], [data-test-id="conversation-actions-menu-icon-button"]',
+          )
+        ) {
+          return;
+        }
+
+        // Programmatic batch delete drives Gemini's own menu via .click() — let
+        // every click through unimpeded for the duration of the batch.
+        if (this.batchDeleteInProgress) {
+          return;
+        }
+
         // Prevent navigation if long-press was triggered
         if (longPressTriggered) {
           e.preventDefault();
@@ -2556,7 +2733,7 @@ export class FolderManager {
     }
 
     this.conversationObserver = new MutationObserver((mutations) => {
-      // Coalesce mutations to the microtask boundary instead of processing
+      // Coalesce mutations to the next animation frame instead of processing
       // them synchronously. Synchronous processing caused sidebar-click
       // jank — see issue #678. Flush is implemented in `flushMutationBatch`.
       for (const mutation of mutations) this.mutationBatchQueue.push(mutation);
@@ -2575,7 +2752,8 @@ export class FolderManager {
   private scheduleMutationBatchFlush(): void {
     if (this.mutationFlushScheduled) return;
     this.mutationFlushScheduled = true;
-    queueMicrotask(() => {
+    this.mutationFlushRafId = window.requestAnimationFrame(() => {
+      this.mutationFlushRafId = null;
       this.mutationFlushScheduled = false;
       if (this.isDestroyed) {
         this.mutationBatchQueue.length = 0;
@@ -2585,8 +2763,16 @@ export class FolderManager {
     });
   }
 
+  private cancelMutationBatchFlush(): void {
+    if (this.mutationFlushRafId !== null) {
+      window.cancelAnimationFrame(this.mutationFlushRafId);
+      this.mutationFlushRafId = null;
+    }
+    this.mutationFlushScheduled = false;
+  }
+
   // Exposed via the private surface so tests can drive flushing
-  // deterministically without depending on microtask ordering in jsdom.
+  // deterministically without depending on animation-frame timing in jsdom.
   private flushMutationBatch(): void {
     if (this.mutationBatchQueue.length === 0) return;
     const mutations = this.mutationBatchQueue;
@@ -2829,8 +3015,7 @@ export class FolderManager {
       this.debug('Reinitializing folder UI...');
 
       // Execute general cleanup tasks first (including event listeners)
-      this.cleanupTasks.forEach((task) => task());
-      this.cleanupTasks = [];
+      this.runCleanupTasks();
 
       // Clean up observers/listeners tied to stale DOM nodes
       if (this.sideNavObserver) {
@@ -2847,6 +3032,7 @@ export class FolderManager {
         this.nativeMenuObserver.disconnect();
         this.nativeMenuObserver = null;
       }
+      this.teardownMoveMenuTriggerListener();
 
       this.teardownPositionEnforcer();
       this.cleanupNotebooksAnchorButton();
@@ -3107,7 +3293,7 @@ export class FolderManager {
     // Create buttons safely
     const yesBtn = document.createElement('button');
     yesBtn.className = 'gv-folder-confirm-btn gv-folder-confirm-yes';
-    yesBtn.textContent = this.t('pm_delete'); // Safe: uses textContent
+    yesBtn.textContent = this.t('folder_remove_conversation_action'); // Safe: uses textContent
 
     const noBtn = document.createElement('button');
     noBtn.className = 'gv-folder-confirm-btn gv-folder-confirm-no';
@@ -4131,39 +4317,39 @@ export class FolderManager {
    */
   private async triggerNativeDeleteForConversation(conversationId: string): Promise<boolean> {
     try {
-      // Step 1: Find the conversation element in the sidebar
+      // Step 1: Find the conversation element in the sidebar.
+      // The lr26 sidebar virtualizes rows — if the user has scrolled the list
+      // since selecting, the target row may be unmounted entirely.
       const conversationEl = this.findNativeConversationElement(conversationId);
       if (!conversationEl) {
-        this.debugWarn(`Could not find conversation element for: ${conversationId}`);
+        console.warn(
+          `[FolderManager] Batch delete: conversation row not in DOM (likely virtualized out): ${conversationId}. ` +
+            'Scroll the sidebar to bring it back into view, or split the batch into smaller chunks.',
+        );
         return false;
       }
 
-      // Step 2: Find and click the more options button
       const moreButton = await this.findAndClickMoreButton(conversationEl);
       if (!moreButton) {
-        this.debugWarn(`Could not find more button for: ${conversationId}`);
+        console.warn(
+          `[FolderManager] Batch delete: actions menu button not found for ${conversationId}`,
+        );
         return false;
       }
 
-      // Wait for menu to appear
       await this.delay(this.BATCH_DELETE_CONFIG.MENU_APPEAR_DELAY);
 
-      // Step 3: Find and click the delete button in the menu
       const deleteSuccess = await this.waitForDeleteButtonAndClick();
       if (!deleteSuccess) {
-        this.debugWarn(`Could not click delete button for: ${conversationId}`);
-        // Try to close the menu by clicking the backdrop
+        console.warn(
+          `[FolderManager] Batch delete: Delete menu item not found after ${this.BATCH_DELETE_CONFIG.MAX_BUTTON_WAIT_TIME}ms for ${conversationId}`,
+        );
         this.clickBackdropToCloseMenu();
         return false;
       }
 
-      // Wait for confirmation dialog (if any)
       await this.delay(this.BATCH_DELETE_CONFIG.DIALOG_APPEAR_DELAY);
-
-      // Step 4: Confirm deletion if confirmation dialog appears
       await this.confirmDeleteIfNeeded();
-
-      // Wait for deletion to complete
       await this.delay(this.BATCH_DELETE_CONFIG.DELETION_COMPLETE_DELAY);
 
       return true;
@@ -4196,36 +4382,60 @@ export class FolderManager {
   }
 
   /**
-   * Find and click the more options button for a conversation
+   * Find and click the more options button for a conversation.
+   *
+   * In Gemini's current sidebar layout the actions-menu-button is rendered
+   * INSIDE the conversation host (<gem-nav-list-item data-test-id="conversation">),
+   * so we look there first. The legacy sibling-container and ancestor-<li>
+   * strategies are kept as fallbacks for older layouts but are no-ops in the
+   * lr26 sidebar.
+   *
+   * The host is also virtualized — a row scrolled far off-screen may exist
+   * only as an empty stub or be missing entirely. Scroll the host into view
+   * before clicking so the trailing actions actually mount.
    */
   private async findAndClickMoreButton(conversationEl: HTMLElement): Promise<HTMLElement | null> {
-    // The more button might be in the actions container which is a sibling
-    let moreButton: HTMLElement | null = null;
-
-    // Strategy 1: Look for actions container as a sibling
-    const parent = conversationEl.parentElement;
-    if (parent) {
-      const actionsContainer = parent.querySelector('.conversation-actions-container');
-      if (actionsContainer) {
-        moreButton = actionsContainer.querySelector(
-          '[data-test-id="actions-menu-button"]',
-        ) as HTMLElement;
-      }
-    }
-
-    // Strategy 2: Look within the conversation element
-    if (!moreButton) {
-      moreButton = conversationEl.querySelector(
+    const locate = (): HTMLElement | null => {
+      // Primary: button is inside the conversation host (current lr26 layout).
+      const inside = conversationEl.querySelector<HTMLElement>(
         '[data-test-id="actions-menu-button"]',
-      ) as HTMLElement;
-    }
+      );
+      if (inside) return inside;
 
-    // Strategy 3: Look for any visible button with the actions-menu-button test id near this element
+      // Fallback: legacy sibling .conversation-actions-container layout.
+      const actionsContainer = conversationEl.parentElement?.querySelector(
+        '.conversation-actions-container',
+      );
+      const sibling = actionsContainer?.querySelector<HTMLElement>(
+        '[data-test-id="actions-menu-button"]',
+      );
+      if (sibling) return sibling;
+
+      // Fallback: nearest <li> ancestor (very old layout).
+      return (
+        conversationEl
+          .closest('li')
+          ?.querySelector<HTMLElement>('[data-test-id="actions-menu-button"]') ?? null
+      );
+    };
+
+    let moreButton = locate();
+
+    // If the row was virtualized away from the viewport its trailing actions
+    // may not have mounted yet. Scroll it back into view and poll briefly.
     if (!moreButton) {
-      // Find the closest list item that contains both the conversation and actions
-      const listItem = conversationEl.closest('li');
-      if (listItem) {
-        moreButton = listItem.querySelector('[data-test-id="actions-menu-button"]') as HTMLElement;
+      try {
+        conversationEl.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
+      } catch {
+        /* scrollIntoView may throw in some embedded contexts — ignore */
+      }
+      const maxWait = this.BATCH_DELETE_CONFIG.MAX_BUTTON_WAIT_TIME;
+      const step = this.BATCH_DELETE_CONFIG.BUTTON_CHECK_INTERVAL;
+      let waited = 0;
+      while (waited < maxWait && !moreButton) {
+        await this.delay(step);
+        waited += step;
+        moreButton = locate();
       }
     }
 
@@ -4235,6 +4445,11 @@ export class FolderManager {
       return moreButton;
     }
 
+    console.warn(
+      '[FolderManager] Could not locate actions-menu-button inside conversation host. ' +
+        'Gemini sidebar DOM may have changed.',
+      conversationEl,
+    );
     return null;
   }
 
@@ -4348,56 +4563,75 @@ export class FolderManager {
 
     const keywords = this.getDeleteKeywords();
 
+    // Track per-poll state so we can emit one summary diagnostic on timeout.
+    let lastTestIdCount = 0;
+    let lastVisibleTestIdCount = 0;
+    let lastOverlayPanes = 0;
+    let lastMenuPanels = 0;
+    let lastMenuItemTexts: string[] = [];
+
     while (elapsed < maxWaitTime) {
-      // Strategy 1: Look for delete button by data-test-id (primary method)
-      const deleteByTestId = document.querySelector(
-        '[data-test-id="delete-button"]',
-      ) as HTMLElement;
-      if (deleteByTestId && this.isVisibleElement(deleteByTestId)) {
-        deleteByTestId.click();
+      // Strategy 1: data-test-id (primary). Use querySelectorAll because some
+      // layouts render hidden template copies that querySelector would lock
+      // onto, never advancing past an invisible match.
+      const deleteCandidates = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-test-id="delete-button"]'),
+      );
+      lastTestIdCount = deleteCandidates.length;
+      const visibleByTestId = deleteCandidates.filter((el) => this.isVisibleElement(el));
+      lastVisibleTestIdCount = visibleByTestId.length;
+      // Prefer one that lives inside an open menu / overlay panel.
+      const targetByTestId =
+        visibleByTestId.find((el) => el.closest('.mat-mdc-menu-panel, .cdk-overlay-pane')) ??
+        visibleByTestId[0];
+      if (targetByTestId) {
+        targetByTestId.click();
         this.debug('Clicked delete button (by test-id)');
         return true;
       }
 
-      // Strategy 2: Look for menu items containing delete text (supports translations)
-      const menuItems = document.querySelectorAll(
-        '.cdk-overlay-container button, ' +
-          '.cdk-overlay-container [role="menuitem"], ' +
-          '.mat-mdc-menu-content button, ' +
-          '.mat-menu-content button',
+      // Strategy 2: scan menu items for matching text (i18n-friendly).
+      const menuItems = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '.cdk-overlay-container button[role="menuitem"], ' +
+            '.cdk-overlay-container [role="menuitem"], ' +
+            '.mat-mdc-menu-content button, ' +
+            '.mat-menu-content button',
+        ),
       );
+      lastMenuItemTexts = menuItems.map((el) => el.textContent?.trim().slice(0, 20) || '');
 
       for (const item of menuItems) {
-        if (!this.isVisibleElement(item as HTMLElement)) continue;
-
+        if (!this.isVisibleElement(item)) continue;
         const text = item.textContent?.toLowerCase().trim() || '';
-        // Match keywords from i18n
         if (
           text &&
           keywords.some(
             (keyword: string) => text === keyword || (text.includes(keyword) && text.length < 20),
           )
         ) {
-          (item as HTMLElement).click();
+          item.click();
           this.debug('Clicked delete button (by text):', text);
           return true;
         }
       }
 
-      // Strategy 3: Look for button with delete icon (mat-icon containing 'delete')
+      // Strategy 3: by icon (mat-icon delete / delete_forever / delete_outline).
       const deleteIcons = document.querySelectorAll(
         '.cdk-overlay-container mat-icon, .cdk-overlay-container .material-icons',
       );
-
       for (const icon of deleteIcons) {
         const iconText = icon.textContent?.toLowerCase().trim() || '';
+        const iconAttr = icon.getAttribute('fonticon') || '';
         if (
           iconText === 'delete' ||
           iconText === 'delete_forever' ||
-          iconText === 'delete_outline'
+          iconText === 'delete_outline' ||
+          iconAttr === 'delete' ||
+          iconAttr === 'delete_forever' ||
+          iconAttr === 'delete_outline'
         ) {
-          // Find the parent button and click it
-          const parentButton = icon.closest('button, [role="menuitem"]') as HTMLElement;
+          const parentButton = icon.closest('button, [role="menuitem"]') as HTMLElement | null;
           if (parentButton && this.isVisibleElement(parentButton)) {
             parentButton.click();
             this.debug('Clicked delete button (by icon)');
@@ -4406,10 +4640,26 @@ export class FolderManager {
         }
       }
 
+      lastOverlayPanes = document.querySelectorAll('.cdk-overlay-pane').length;
+      lastMenuPanels = document.querySelectorAll('.mat-mdc-menu-panel').length;
+
       await this.delay(checkInterval);
       elapsed += checkInterval;
     }
 
+    // Emit a SINGLE compact diagnostic on timeout so users can paste it
+    // verbatim when reporting batch-delete failures.
+    console.warn(
+      '[FolderManager] Batch delete diagnostics on timeout: ' +
+        JSON.stringify({
+          deleteButtonsFound: lastTestIdCount,
+          deleteButtonsVisible: lastVisibleTestIdCount,
+          overlayPanes: lastOverlayPanes,
+          menuPanels: lastMenuPanels,
+          menuItemTexts: lastMenuItemTexts.slice(0, 10),
+          keywordsTried: keywords,
+        }),
+    );
     return false;
   }
 
@@ -4508,8 +4758,11 @@ export class FolderManager {
    */
   private getDeleteKeywords(): string[] {
     const rawPatterns = this.t('batch_delete_match_patterns') || '';
+    // Split on both ASCII and CJK fullwidth commas (and a couple of common
+    // separators) so locales authored with `，` / `、` / `；` don't end up as
+    // one giant unsplittable string.
     return rawPatterns
-      .split(',')
+      .split(/[,，、；;]+/)
       .map((s: string) => s.trim().toLowerCase())
       .filter((s: string) => s.length > 0);
   }
@@ -5844,385 +6097,251 @@ export class FolderManager {
     setTimeout(() => textarea.focus(), 50);
   }
 
+  // Detect a freshly-opened conversation ⋮ menu and inject our "Move to folder"
+  // item. Google's "lr26" UI overhaul replaced the old `.mat-mdc-menu-panel`
+  // (rendered into `.cdk-overlay-container`) with a `<gem-menu>` element and
+  // re-creates the overlay container, which silently broke the previous
+  // observer. This mirrors the proven, robust export-button observer: it
+  // watches `document.body`, matches both panel variants, and retries while
+  // the menu items stream in asynchronously.
   private setupNativeConversationMenuObserver(): void {
-    // Disconnect existing observer if any
     if (this.nativeMenuObserver) {
       this.nativeMenuObserver.disconnect();
+      this.nativeMenuObserver = null;
     }
 
-    // Observe the global overlay container for menu panels.
-    // Angular Material renders menus into .cdk-overlay-container which is a
-    // direct child of <body>. Observing at this level catches all menu
-    // insertions without being overwhelmed by unrelated DOM mutations.
-    const observeTarget = document.querySelector('.cdk-overlay-container') ?? document.body;
-
-    this.nativeMenuObserver = new MutationObserver((mutations) => {
+    const observer = new MutationObserver((mutations) => {
       if (this.isDestroyed) return;
-      mutations.forEach((mutation) => {
-        // Handle added nodes (menu opening)
+      for (const mutation of mutations) {
         mutation.addedNodes.forEach((node) => {
-          if (node instanceof HTMLElement) {
-            // Check if this is the native conversation menu
-            const menuContent = node.querySelector('.mat-mdc-menu-content');
-            if (menuContent && !menuContent.querySelector('.gv-move-to-folder-btn')) {
-              // Check if this is a conversation menu (not model selection menu or other menus)
-              if (this.isConversationMenu(node)) {
-                this.debug('Observer: conversation menu detected, preparing to inject');
-
-                // Sidebar menus have conversation info pre-populated by click tracking.
-                // Top-right (header) menus do NOT — extract independently from page.
-                if (!this.lastClickedConversationInfo) {
-                  const pageInfo = this.extractConversationInfoFromPage();
-                  if (pageInfo) {
-                    this.lastClickedConversationInfo = pageInfo;
-                    this.debug('Observer: populated info from page for top menu');
-                  } else {
-                    this.debug('Observer: page URL has no valid conversation ID, skipping');
-                    return;
-                  }
-                }
-
-                this.injectMoveToFolderButton(menuContent as HTMLElement);
-              } else {
-                this.debug('Observer: non-conversation menu detected, skipping injection');
-              }
-            } else if (menuContent) {
-              this.debug('Observer: menu content detected but button already present');
-            }
-          }
+          if (!(node instanceof HTMLElement)) return;
+          const panels = new Set<HTMLElement>();
+          if (node.matches(CONVERSATION_MENU_PANEL_SELECTOR)) panels.add(node);
+          node
+            .querySelectorAll<HTMLElement>(CONVERSATION_MENU_PANEL_SELECTOR)
+            .forEach((panel) => panels.add(panel));
+          const closest = node.closest(CONVERSATION_MENU_PANEL_SELECTOR) as HTMLElement | null;
+          if (closest) panels.add(closest);
+          panels.forEach((panel) =>
+            window.setTimeout(() => this.tryInjectMoveToFolderOnPanel(panel), 30),
+          );
         });
 
-        // Handle removed nodes (menu closing)
+        // When a conversation menu we injected into closes, mat-menu restores
+        // focus to the ⋮ trigger, which keeps the row visually selected via
+        // :focus-within. Drop that focus on pointer-driven dismissals so the
+        // row reverts. See releaseTriggerFocusAfterPointerClose for guards.
         mutation.removedNodes.forEach((node) => {
-          if (node instanceof HTMLElement) {
-            // Check if a menu panel was removed
-            const isMenuPanel =
-              node.classList?.contains('mat-mdc-menu-panel') ||
-              node.querySelector('.mat-mdc-menu-panel');
-            if (isMenuPanel) {
-              this.debug('Observer: menu closed, clearing conversation state');
-              this.lastClickedConversation = null;
-              this.lastClickedConversationInfo = null;
-            }
+          if (!(node instanceof HTMLElement)) return;
+          const wasInjectedConversationMenu =
+            (node.matches?.(CONVERSATION_MENU_PANEL_SELECTOR) &&
+              node.querySelector('.gv-move-to-folder-btn')) ||
+            node.querySelector?.(`${CONVERSATION_MENU_PANEL_SELECTOR} .gv-move-to-folder-btn`) ||
+            (node.querySelector?.(CONVERSATION_MENU_PANEL_SELECTOR) &&
+              node.querySelector('.gv-move-to-folder-btn'));
+          if (wasInjectedConversationMenu) {
+            this.releaseTriggerFocusAfterPointerClose();
           }
         });
-      });
-    });
-
-    this.nativeMenuObserver.observe(observeTarget, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  private isConversationMenu(menuElement: HTMLElement): boolean {
-    // Check if this is NOT a model selection menu or other non-conversation menus
-    const menuPanel = menuElement.querySelector('.mat-mdc-menu-panel');
-
-    // Exclude model selection menu (has gds-mode-switch-menu class)
-    if (menuPanel?.classList.contains('gds-mode-switch-menu')) {
-      this.debug('isConversationMenu: detected model selection menu');
-      return false;
-    }
-
-    // Exclude menus with bard-mode-list-button (model selection)
-    if (menuElement.querySelector('.bard-mode-list-button')) {
-      this.debug('isConversationMenu: detected bard mode list menu');
-      return false;
-    }
-
-    // Check for conversation-specific elements
-    const menuContent = menuElement.querySelector('.mat-mdc-menu-content');
-    if (!menuContent) return false;
-
-    // Look for conversation menu indicators:
-    // 1. Pin button (common in conversation menus)
-    // 2. Rename/delete conversation buttons
-    // 3. Share conversation button
-    const hasPinButton = menuContent.querySelector('[data-test-id="pin-button"]');
-    const hasRenameButton = menuContent.querySelector('[data-test-id="rename-button"]');
-    const hasShareButton = menuContent.querySelector('[data-test-id="share-button"]');
-    const hasDeleteButton = menuContent.querySelector('[data-test-id="delete-button"]');
-
-    // If any conversation-specific button exists, it's a conversation menu
-    if (hasPinButton || hasRenameButton || hasShareButton || hasDeleteButton) {
-      this.debug('isConversationMenu: found conversation-specific buttons');
-      return true;
-    }
-
-    // If we have a lastClickedConversation, we can assume it's a conversation menu
-    if (this.lastClickedConversation) {
-      this.debug('isConversationMenu: lastClickedConversation exists');
-      return true;
-    }
-
-    // Default to false if we can't determine
-    this.debug('isConversationMenu: could not determine menu type, defaulting to false');
-    return false;
-  }
-
-  private injectMoveToFolderButton(menuContent: HTMLElement): void {
-    this.debug('injectMoveToFolderButton: begin');
-
-    // First, try to use pre-extracted conversation info (most reliable)
-    let conversationId: string | null = null;
-    let title: string | null = null;
-    let url: string | null = null;
-
-    if (this.lastClickedConversationInfo) {
-      this.debug('Using pre-extracted conversation info');
-      conversationId = this.lastClickedConversationInfo.id;
-      title = this.lastClickedConversationInfo.title;
-      url = this.lastClickedConversationInfo.url;
-    } else {
-      // Fallback: try to extract from conversation element
-      this.debug('No pre-extracted info, falling back to extraction from element');
-      const conversationEl = this.findConversationElementFromMenu();
-      if (!conversationEl) {
-        this.debug('No conversation element found from menu');
-        return;
       }
+    });
 
-      conversationId = this.extractNativeConversationId(conversationEl);
-      title = this.extractNativeConversationTitle(conversationEl);
-      url = this.extractNativeConversationUrl(conversationEl);
+    observer.observe(document.body, { childList: true, subtree: true });
+    this.nativeMenuObserver = observer;
+
+    // Catch any menu already open at setup time.
+    document
+      .querySelectorAll<HTMLElement>(CONVERSATION_MENU_PANEL_SELECTOR)
+      .forEach((panel) => window.setTimeout(() => this.tryInjectMoveToFolderOnPanel(panel), 30));
+  }
+
+  // Inject the "Move to folder" item into a native conversation menu panel,
+  // retrying while the menu content renders. Conversation info is resolved
+  // lazily on click (from the menu trigger or the open page) so a transient
+  // extraction miss never prevents the item from appearing.
+  private tryInjectMoveToFolderOnPanel(
+    panel: HTMLElement,
+    retriesLeft: number = MOVE_MENU_INJECTION_RETRY_LIMIT,
+  ): void {
+    if (this.isDestroyed || !panel.isConnected) return;
+
+    const context = getConversationMenuContext(panel);
+    if (!context) return; // not a conversation menu (e.g. model picker / response menu)
+
+    const label = this.t('conversation_move_to_folder');
+    const injected = injectConversationMenuMoveToFolderButton(panel, {
+      label,
+      tooltip: label,
+      onClick: () => {
+        const info = this.resolveConversationInfoForMenu(context);
+        if (info) {
+          this.showMoveToFolderDialog(info.id, info.title, info.url);
+        } else {
+          this.debugWarn('Move to folder: could not resolve conversation info on click');
+        }
+      },
+    });
+
+    if (!injected && retriesLeft > 0) {
+      window.setTimeout(
+        () => this.tryInjectMoveToFolderOnPanel(panel, retriesLeft - 1),
+        MOVE_MENU_INJECTION_RETRY_DELAY_MS,
+      );
     }
+  }
 
-    // Additional fallbacks when info is still missing
-    if (!conversationId) {
-      // Try to parse hex id from the overlay menu itself
-      const hexFromMenu = this.extractHexIdFromMenu(menuContent);
-      if (hexFromMenu) {
-        conversationId = hexFromMenu;
-        this.debug('injectMoveToFolderButton: using id from menu jslog', conversationId);
-      } else if (this.lastClickedConversation) {
-        // Try from jslog on the conversation element tree
-        const hexFromJslog = this.extractHexIdFromJslog(this.lastClickedConversation);
-        if (hexFromJslog) {
-          conversationId = hexFromJslog;
-          this.debug('injectMoveToFolderButton: using id from conversation jslog', conversationId);
+  // Resolve the conversation a menu belongs to. Sidebar menus map back to their
+  // list item via the trigger; the top-bar ⋮ menu maps to the open page.
+  private resolveConversationInfoForMenu(
+    context: ConversationMenuContext,
+  ): { id: string; title: string; url: string } | null {
+    const trigger = context.trigger;
+    if (trigger) {
+      const conversationEl = this.findConversationElementForTrigger(trigger);
+      if (conversationEl) {
+        const id = this.extractNativeConversationId(conversationEl);
+        if (id) {
+          const url =
+            this.extractNativeConversationUrl(conversationEl) ||
+            this.buildConversationUrlFromId(id);
+          const title =
+            this.extractNativeConversationTitle(conversationEl) ||
+            this.extractFallbackTitle(conversationEl) ||
+            'Untitled';
+          if (url) {
+            this.debug('resolveConversationInfoForMenu(sidebar):', { id, title, url });
+            return { id, title, url };
+          }
         }
       }
     }
 
-    // If URL is missing but we have an id, synthesize a best-effort URL
-    if (!url && conversationId) {
-      url = this.buildConversationUrlFromId(conversationId);
-      this.debug('injectMoveToFolderButton: built fallback URL from id', url);
+    // Top-bar menu (or sidebar resolution miss): derive from the current page.
+    const pageInfo = this.extractConversationInfoFromPage();
+    if (pageInfo) {
+      this.debug('resolveConversationInfoForMenu(page):', pageInfo);
+      return pageInfo;
     }
-
-    // Title fallback
-    if ((!title || title.trim() === '') && this.lastClickedConversation) {
-      title = this.extractFallbackTitle(this.lastClickedConversation) || 'Untitled';
-      this.debug('injectMoveToFolderButton: using fallback title', title);
-    }
-
-    this.debug('Extracted conversation info:', { conversationId, title, url });
-
-    if (!conversationId || !title || !url) {
-      this.debugWarn('Missing conversation info:', { conversationId, title, url });
-      return;
-    }
-
-    const moveToFolderLabel = this.t('conversation_move_to_folder');
-    const menuItem = createMoveToFolderMenuItem(menuContent, moveToFolderLabel, moveToFolderLabel);
-
-    // Add click handler
-    menuItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.showMoveToFolderDialog(conversationId, title, url);
-
-      // Close the native menu properly
-      // Strategy 1: Simulate click on backdrop to trigger Angular's native cleanup
-      // We look for the last backdrop as it's likely the one covering the screen for the current menu
-      const backdrops = document.querySelectorAll('.cdk-overlay-backdrop');
-      const backdrop = backdrops.length > 0 ? backdrops[backdrops.length - 1] : null;
-
-      if (backdrop instanceof HTMLElement) {
-        this.debug('Closing menu by clicking backdrop');
-        backdrop.click();
-      } else {
-        // Strategy 2: Fallback manual cleanup if backdrop logic fails
-        this.debug('Backdrop not found, performing manual cleanup');
-        const menu = menuContent.closest('.mat-mdc-menu-panel');
-        if (menu) {
-          menu.remove();
-        }
-
-        // Also try to remove any orphaned backdrop that might be blocking the screen
-        const orphanedBackdrop = document.querySelector('.cdk-overlay-backdrop');
-        if (orphanedBackdrop) {
-          orphanedBackdrop.remove();
-        }
-      }
-    });
-
-    // Insert after the pin button if it exists, otherwise insert at the beginning
-    const pinButton = menuContent.querySelector('[data-test-id="pin-button"]');
-    if (pinButton && pinButton.nextSibling) {
-      this.debug('injectMoveToFolderButton: inserting after pin-button');
-      menuContent.insertBefore(menuItem, pinButton.nextSibling);
-    } else {
-      this.debug('injectMoveToFolderButton: inserting at beginning of menu');
-      menuContent.insertBefore(menuItem, menuContent.firstChild);
-    }
-  }
-
-  private findConversationElementFromMenu(): HTMLElement | null {
-    // Use the element captured on click
-    if (this.lastClickedConversation) {
-      this.debug('findConversationElementFromMenu: using lastClickedConversation');
-      return this.lastClickedConversation;
-    }
-
-    // No fallback - if we don't have the clicked conversation element, we should not guess
-    // The previous fallback logic using '.conversation-actions-container.selected' was incorrect
-    // as it would select the currently focused conversation instead of the one user clicked
-    this.debugWarn(
-      'findConversationElementFromMenu: no conversation element found (lastClickedConversation is null)',
-    );
     return null;
   }
 
-  private lastClickedConversation: HTMLElement | null = null;
-  private lastClickedConversationInfo: { id: string; title: string; url: string } | null = null;
+  // Map a ⋮ trigger button to its conversation list item. Handles the current
+  // UI (trigger nested inside `[data-test-id="conversation"]`) and the older
+  // sibling layout (`.conversation-actions-container` next to the item).
+  private findConversationElementForTrigger(trigger: HTMLElement): HTMLElement | null {
+    const direct = trigger.closest('[data-test-id="conversation"]') as HTMLElement | null;
+    if (direct) return direct;
 
-  private setupConversationClickTracking(): void {
-    // Track clicks on conversation more buttons
-    document.addEventListener(
-      'click',
-      (e) => {
-        const target = e.target as HTMLElement;
-        const moreButton = target.closest('[data-test-id="actions-menu-button"]');
-        if (moreButton) {
-          this.debug('More button clicked:', moreButton);
-
-          let conversationEl: HTMLElement | null = null;
-
-          // Strategy 1: In Gemini's new UI, the conversation div and actions-menu-button are siblings!
-          // Find the actions container first, then look for sibling conversation div
-          const actionsContainer = moreButton.closest('.conversation-actions-container');
-          if (actionsContainer) {
-            this.debug('Found actions container, looking for sibling conversation...');
-            // Look for previous sibling with data-test-id="conversation"
-            let sibling = actionsContainer.previousElementSibling;
-            while (sibling) {
-              if (sibling.getAttribute('data-test-id') === 'conversation') {
-                conversationEl = sibling as HTMLElement;
-                this.debug('Found conversation as sibling:', conversationEl);
-                break;
-              }
-              sibling = sibling.previousElementSibling;
-            }
-          }
-
-          // Strategy 2: Try traditional closest approach (for older UI patterns)
-          if (!conversationEl) {
-            this.debug('Trying closest with conversation selector...');
-            conversationEl = moreButton.closest(
-              '[data-test-id="conversation"]',
-            ) as HTMLElement | null;
-          }
-
-          if (!conversationEl) {
-            this.debug('Trying history-item selector...');
-            conversationEl = moreButton.closest(
-              '[data-test-id^="history-item"]',
-            ) as HTMLElement | null;
-          }
-
-          if (!conversationEl) {
-            this.debug('Trying conversation-card selector...');
-            conversationEl = moreButton.closest('.conversation-card') as HTMLElement | null;
-          }
-
-          // Strategy 3: Check parent container for conversation children
-          if (!conversationEl && actionsContainer && actionsContainer.parentElement) {
-            this.debug('Trying to find conversation in parent container...');
-            const parentContainer = actionsContainer.parentElement;
-            const conversationInParent = parentContainer.querySelector(
-              '[data-test-id="conversation"]',
-            ) as HTMLElement | null;
-            if (conversationInParent) {
-              // Verify this is the right conversation by checking it's close to the actions container
-              const actionsIndex = Array.from(parentContainer.children).indexOf(actionsContainer);
-              const convIndex = Array.from(parentContainer.children).indexOf(conversationInParent);
-              if (Math.abs(actionsIndex - convIndex) <= 1) {
-                conversationEl = conversationInParent;
-                this.debug('Found conversation in parent container');
-              }
-            }
-          }
-
-          // Last resort fallback
-          if (!conversationEl) {
-            this.debugWarn('Could not find precise conversation element, using broader fallback');
-            conversationEl = moreButton.closest('[jslog]') as HTMLElement | null;
-          }
-
-          if (conversationEl) {
-            this.lastClickedConversation = conversationEl as HTMLElement;
-
-            // Debug: verify this element and show its attributes
-            const linkCount = conversationEl.querySelectorAll(
-              'a[href*="/app/"], a[href*="/gem/"]',
-            ).length;
-            const jslogAttr = conversationEl.getAttribute('jslog');
-            const dataTestId = conversationEl.getAttribute('data-test-id');
-            this.debug('Tracked conversation element:', {
-              element: conversationEl,
-              linkCount,
-              jslog: jslogAttr,
-              dataTestId,
-            });
-
-            // Extract conversation info immediately to avoid issues with multiple links later
-            const conversationId = this.extractNativeConversationId(conversationEl);
-            const title = this.extractNativeConversationTitle(conversationEl);
-            const url = this.extractNativeConversationUrl(conversationEl);
-
-            if (conversationId && title && url) {
-              this.lastClickedConversationInfo = { id: conversationId, title, url };
-              this.debug(
-                '✅ Extracted conversation info on click:',
-                this.lastClickedConversationInfo,
-              );
-            } else {
-              this.debugWarn('⚠️ Failed to extract complete conversation info on click', {
-                conversationId,
-                title,
-                url,
-              });
-              this.lastClickedConversationInfo = null;
-            }
-
-            // Fallback: after the click, the Angular Material menu is rendered
-            // into a global overlay container. Poll briefly to inject our item
-            // even if the mutation observer misses the insertion.
-            let attempts = 0;
-            const maxAttempts = 20; // ~1s at 50ms intervals
-            const timer = window.setInterval(() => {
-              attempts++;
-              const menuContent = document.querySelector(
-                '.mat-mdc-menu-panel .mat-mdc-menu-content',
-              ) as HTMLElement | null;
-              if (menuContent) {
-                this.debug('Overlay poll: menu content found on attempt', attempts);
-                if (!menuContent.querySelector('.gv-move-to-folder-btn')) {
-                  this.debug('Overlay poll: injecting Move to Folder');
-                  this.injectMoveToFolderButton(menuContent);
-                }
-                window.clearInterval(timer);
-              } else if (attempts >= maxAttempts) {
-                this.debugWarn('Overlay poll: menu not found within attempts', maxAttempts);
-                window.clearInterval(timer);
-              }
-            }, 50);
-          }
+    const actionsContainer = trigger.closest('.conversation-actions-container');
+    if (actionsContainer) {
+      let sibling = actionsContainer.previousElementSibling;
+      while (sibling) {
+        if (sibling.getAttribute('data-test-id') === 'conversation') {
+          return sibling as HTMLElement;
         }
-      },
-      true,
-    );
+        sibling = sibling.previousElementSibling;
+      }
+    }
+
+    const historyItem = trigger.closest('[data-test-id^="history-item"]') as HTMLElement | null;
+    if (historyItem) return historyItem;
+
+    return null;
+  }
+
+  // Belt-and-suspenders alongside nativeMenuObserver: when a conversation ⋮
+  // trigger is clicked, resolve the panel it controls (via aria-controls/owns)
+  // and retry injection while the menu renders. This covers cases where the
+  // panel is re-used / re-rendered without a fresh childList mutation.
+  private setupConversationClickTracking(): void {
+    if (this.moveMenuTriggerHandler) return; // already wired (idempotent across reinit)
+
+    const handler = (event: Event) => {
+      if (this.isDestroyed) return;
+      // Any pointerdown/click marks the modality; used to decide whether to drop
+      // trigger focus on menu close (pointer) vs preserve it (keyboard a11y).
+      this.lastInputModality = 'pointer';
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const trigger = target.closest(CONVERSATION_MENU_TRIGGER_SELECTOR) as HTMLElement | null;
+      if (!trigger) return;
+
+      const panelIds = this.parseMenuTriggerPanelIds(trigger);
+      for (let attempt = 0; attempt <= MOVE_MENU_INJECTION_RETRY_LIMIT; attempt++) {
+        window.setTimeout(() => {
+          if (this.isDestroyed) return;
+          if (panelIds.length > 0) {
+            panelIds.forEach((id) => {
+              const panel = document.getElementById(id);
+              if (panel instanceof HTMLElement && panel.matches(CONVERSATION_MENU_PANEL_SELECTOR)) {
+                this.tryInjectMoveToFolderOnPanel(panel);
+              }
+            });
+          } else {
+            document
+              .querySelectorAll<HTMLElement>(CONVERSATION_MENU_PANEL_SELECTOR)
+              .forEach((panel) => this.tryInjectMoveToFolderOnPanel(panel));
+          }
+        }, attempt * MOVE_MENU_INJECTION_RETRY_DELAY_MS);
+      }
+    };
+
+    document.addEventListener('click', handler, true);
+    document.addEventListener('pointerdown', handler, true);
+    this.moveMenuTriggerHandler = handler;
+
+    const keyHandler = () => {
+      if (!this.isDestroyed) this.lastInputModality = 'keyboard';
+    };
+    document.addEventListener('keydown', keyHandler, true);
+    this.moveMenuKeydownHandler = keyHandler;
+  }
+
+  // After a conversation ⋮ menu we injected into closes, mat-menu restores DOM
+  // focus to the trigger (Angular default), leaving the row highlighted via
+  // :focus-within. Drop that focus — but ONLY for plain pointer dismissals, so
+  // we never disturb keyboard navigation, the rename/delete flows, our
+  // move-to-folder dialog, or any confirm dialog that takes focus.
+  private releaseTriggerFocusAfterPointerClose(): void {
+    if (this.lastInputModality !== 'pointer') return;
+    window.setTimeout(() => {
+      if (this.isDestroyed) return;
+      // Skip if another overlay/dialog grabbed the stage (delete confirm, our
+      // move-to-folder dialog, any CDK dialog) — those manage their own focus.
+      if (
+        document.querySelector(
+          '.cdk-overlay-backdrop, .mat-mdc-dialog-container, .gv-folder-dialog-overlay',
+        )
+      ) {
+        return;
+      }
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active.matches?.(CONVERSATION_MENU_TRIGGER_SELECTOR)) {
+        active.blur();
+      }
+    }, 0);
+  }
+
+  private parseMenuTriggerPanelIds(trigger: HTMLElement): string[] {
+    const raw = `${trigger.getAttribute('aria-controls') || ''} ${
+      trigger.getAttribute('aria-owns') || ''
+    }`;
+    return raw
+      .split(/\s+/)
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }
+
+  private teardownMoveMenuTriggerListener(): void {
+    if (this.moveMenuTriggerHandler) {
+      document.removeEventListener('click', this.moveMenuTriggerHandler, true);
+      document.removeEventListener('pointerdown', this.moveMenuTriggerHandler, true);
+      this.moveMenuTriggerHandler = null;
+    }
+    if (this.moveMenuKeydownHandler) {
+      document.removeEventListener('keydown', this.moveMenuKeydownHandler, true);
+      this.moveMenuKeydownHandler = null;
+    }
   }
 
   private extractNativeConversationId(conversationEl: HTMLElement): string | null {
@@ -6292,7 +6411,7 @@ export class FolderManager {
       (conversationEl.closest('[data-test-id="conversation"]') as HTMLElement) || conversationEl;
     // 1) Known title selectors
     const titleEl = scope.querySelector(
-      '.gds-label-l, .conversation-title-text, [data-test-id="conversation-title"], h3',
+      '.title-text, .gds-label-l, .conversation-title-text, [data-test-id="conversation-title"], h3',
     );
     let title = titleEl?.textContent?.trim() || null;
     if (title && !this.isGemLabel(title)) {
@@ -6617,25 +6736,6 @@ export class FolderManager {
     return null;
   }
 
-  private extractHexIdFromMenu(menuContent: HTMLElement): string | null {
-    try {
-      const nodes = menuContent.querySelectorAll('[jslog]');
-      for (const n of Array.from(nodes)) {
-        const val = n.getAttribute('jslog');
-        if (!val) continue;
-        const m = val.match(/c_([a-f0-9]{8,})/i);
-        if (m && m[1]) {
-          this.debug('extractId(menu jslog):', m[1]);
-          return m[1];
-        }
-      }
-    } catch (e) {
-      this.debugWarn('extractHexIdFromMenu error:', e);
-    }
-    this.debugWarn('extractId(menu): not found');
-    return null;
-  }
-
   private buildConversationUrlFromId(hexId: string): string {
     try {
       const path = window.location.pathname;
@@ -6905,6 +7005,10 @@ export class FolderManager {
    */
   private async loadData(): Promise<void> {
     try {
+      // On Safari, restore recovery backups from the durable mirror before any
+      // recoverFromBackup() can run (localStorage may have been ITP-evicted).
+      await this.backupService.ensureHydrated();
+
       let loadedData = await this.storage.loadData(this.activeStorageKey);
 
       if (!loadedData && this.accountIsolationEnabled && this.activeStorageKey !== STORAGE_KEY) {
@@ -7806,23 +7910,26 @@ export class FolderManager {
 
   private applyFolderEnabledSetting(): void {
     if (this.folderEnabled) {
-      // If folder UI doesn't exist yet, initialize it
+      this.debug('Folder feature enabled');
+
+      if (this.floatingModeEnabled) {
+        void this.startFloatingMode().catch((error) => {
+          console.error('[FolderManager] Failed to initialize floating folder UI:', error);
+        });
+        return;
+      }
+
       if (!this.containerElement) {
-        this.debug('Folder feature enabled, initializing UI');
-        this.initializeFolderUI().catch((error) => {
+        this.debug('Folder feature enabled, initializing sidebar UI');
+        void this.initializeFolderUI().catch((error) => {
           console.error('[FolderManager] Failed to initialize folder UI:', error);
         });
       } else {
-        // UI already exists, just show it
         this.containerElement.style.display = '';
-        this.debug('Folder feature enabled');
       }
     } else {
-      // Hide the folder UI if it exists
-      if (this.containerElement) {
-        this.containerElement.style.display = 'none';
-        this.debug('Folder feature disabled');
-      }
+      this.debug('Folder feature disabled, tearing down mounted runtime');
+      this.teardownMountedFolderRuntime();
     }
   }
 
@@ -7837,10 +7944,22 @@ export class FolderManager {
    * Apply hide archived setting to a single conversation element
    */
   private applyHideArchivedToConversation(conv: HTMLElement): void {
+    if (!this.hideArchivedConversations) {
+      if (
+        conv.classList.contains('gv-conversation-archived') ||
+        this.getNativeConversationActionsContainer(conv)?.classList.contains(
+          ARCHIVED_CONVERSATION_ACTIONS_CLASS,
+        )
+      ) {
+        this.setNativeConversationArchivedState(conv, false);
+      }
+      return;
+    }
+
     const convId = this.extractConversationId(conv);
     const isArchived = this.isConversationInFolders(convId);
 
-    this.setNativeConversationArchivedState(conv, this.hideArchivedConversations && isArchived);
+    this.setNativeConversationArchivedState(conv, isArchived);
   }
 
   private setNativeConversationArchivedState(conv: HTMLElement, isArchived: boolean): void {
@@ -8499,13 +8618,15 @@ export class FolderManager {
       // Handle request to collect all conversations and folder structure for AI organization
       if (msg.type === 'gv.folders.getStructureForAI') {
         this.debug('Received AI structure request');
-        const sidebarConversations = this.collectAllSidebarConversations();
-        sendResponse({
-          ok: true,
-          sidebarConversations,
-          folderData: this.data,
-        });
-        return true;
+        this.collectAllSidebarConversations()
+          .then((sidebarConversations) => {
+            sendResponse({ ok: true, sidebarConversations, folderData: this.data });
+          })
+          .catch((error) => {
+            this.debugWarn('getStructureForAI collection failed:', error);
+            sendResponse({ ok: true, sidebarConversations: [], folderData: this.data });
+          });
+        return true; // respond asynchronously after rows populate
       }
 
       // Return true for all messages to keep the channel open
@@ -8514,27 +8635,68 @@ export class FolderManager {
   }
 
   /**
-   * Collect all conversation titles and URLs from the native sidebar DOM
+   * A conversation row is "populated" once Gemini fills in its link. The lr26
+   * sidebar virtualizes rows: `[data-test-id="conversation"]` elements exist as
+   * empty stubs (no link, no title) while collapsed or mid-render, and only gain
+   * an `<a href>` once actually rendered. We use the link as the populated signal.
    */
-  private collectAllSidebarConversations(): Array<{
-    id: string;
-    title: string;
-    url: string;
-  }> {
+  private isPopulatedConversationEl(el: HTMLElement): boolean {
+    return !!el.querySelector('a[href*="/app/"], a[href*="/gem/"]');
+  }
+
+  /**
+   * Collect all conversation titles and URLs from the native sidebar DOM.
+   * Waits for the virtualized rows to populate before reading them — otherwise
+   * the list comes back empty and the AI-organize prompt has nothing to work
+   * with (see #725).
+   */
+  private async collectAllSidebarConversations(): Promise<
+    Array<{ id: string; title: string; url: string }>
+  > {
+    await this.waitForPopulatedSidebarConversations();
+    return this.collectPopulatedConversations();
+  }
+
+  /** Synchronous extraction over the currently-populated sidebar rows. */
+  private collectPopulatedConversations(): Array<{ id: string; title: string; url: string }> {
     const results: Array<{ id: string; title: string; url: string }> = [];
-    const conversationEls = document.querySelectorAll('[data-test-id="conversation"]');
+    const seen = new Set<string>();
+    const conversationEls = this.getNativeConversationElements();
 
     for (const el of Array.from(conversationEls)) {
       const htmlEl = el as HTMLElement;
+      if (!this.isPopulatedConversationEl(htmlEl)) continue; // skip virtualized stub
       const id = this.extractNativeConversationId(htmlEl);
-      const title = this.extractNativeConversationTitle(htmlEl);
       const url = this.extractNativeConversationUrl(htmlEl);
-      if (id && title && url) {
-        results.push({ id, title, url });
-      }
+      if (!id || !url) continue;
+      if (seen.has(id)) continue; // collapsed rail can emit duplicate rows
+      seen.add(id);
+      const title = this.extractNativeConversationTitle(htmlEl) || 'Untitled';
+      results.push({ id, title, url });
     }
 
     return results;
+  }
+
+  /**
+   * Poll until at least one sidebar conversation row is populated, or timeout.
+   * Returns true if a populated row was found.
+   */
+  private async waitForPopulatedSidebarConversations(): Promise<boolean> {
+    const hasPopulated = () =>
+      Array.from(this.getNativeConversationElements()).some((el) =>
+        this.isPopulatedConversationEl(el as HTMLElement),
+      );
+
+    if (hasPopulated()) return true;
+
+    const deadline = Date.now() + AI_ORG_COLLECT_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await this.delay(AI_ORG_COLLECT_POLL_MS);
+      if (this.isDestroyed) return false;
+      if (hasPopulated()) return true;
+    }
+    return false;
   }
 
   // Tooltip methods

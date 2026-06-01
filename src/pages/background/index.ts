@@ -13,8 +13,11 @@ import { exportBackupableSyncSettings } from '@/core/services/SettingsBackupServ
 import { StorageKeys } from '@/core/types/common';
 import type { FolderData } from '@/core/types/folder';
 import type { PromptItem, SyncAccountScope, SyncMode } from '@/core/types/sync';
-import { isFirefox } from '@/core/utils/browser';
+import { isFirefox, supportsExtensionNotifications } from '@/core/utils/browser';
 import { WATERMARK_STORAGE_KEYS, resolveWatermarkSettings } from '@/core/utils/watermarkSettings';
+import { pluginsToOriginPatterns } from '@/features/plugins/runtime/siteRegistration';
+import { listPluginManifests } from '@/features/plugins/sources/defaultSources';
+import type { PluginManifest } from '@/features/plugins/types';
 import type { ForkNode, ForkNodesData } from '@/pages/content/fork/forkTypes';
 import {
   filterTimelineHierarchyByRouteScope,
@@ -24,15 +27,118 @@ import {
 import type { StarredMessage, StarredMessagesData } from '@/pages/content/timeline/starredTypes';
 
 const CUSTOM_CONTENT_SCRIPT_ID = 'gv-custom-content-script';
+const PLUGIN_CONTENT_SCRIPT_ID = 'gv-plugin-content-script';
 const CUSTOM_WEBSITE_KEY = 'gvPromptCustomWebsites';
 const FETCH_INTERCEPTOR_SCRIPT_ID = 'gv-fetch-interceptor';
+const RESPONSE_COMPLETE_OBSERVER_SCRIPT_ID = 'gv-response-complete-observer';
+const RESPONSE_COMPLETE_NOTIFICATION_DEDUP_MS = 3000;
+const RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_KEY = 'responseCompleteNotificationMessage';
+const RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_FALLBACK = 'Gemini response complete';
+const RESPONSE_COMPLETE_NOTIFICATION_TITLE = 'Gemini Voyager';
+const RESPONSE_COMPLETE_NOTIFICATION_TITLE_SEPARATOR = ' - ';
+const RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_SEPARATOR = ': ';
+const RESPONSE_COMPLETE_NOTIFICATION_TITLE_MAX_LENGTH = 120;
+const RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_MAX_LENGTH = 220;
+const RESPONSE_COMPLETE_NOTIFICATION_ICON = 'icon-128.png';
+const RESPONSE_COMPLETE_UNKNOWN_TAB_ID = 'unknown';
 
-// Gemini domains where the fetch interceptor should run
-const GEMINI_MATCHES = [
+const responseCompleteNotificationLastShown = new Map<string, number>();
+
+// Gemini domains where the watermark fetch interceptor should run.
+const GEMINI_FETCH_INTERCEPTOR_MATCHES = [
   'https://gemini.google.com/*',
   'https://aistudio.google.com/*',
   'https://aistudio.google.cn/*',
 ];
+
+const GEMINI_RESPONSE_COMPLETE_OBSERVER_MATCHES = [
+  ...GEMINI_FETCH_INTERCEPTOR_MATCHES,
+  'https://business.gemini.google/*',
+];
+
+interface ResponseCompleteNotificationDetails {
+  conversationUrl?: string;
+  conversationTitle?: string;
+  userPrompt?: string;
+}
+
+function getI18nMessage(key: string, fallback: string): string {
+  try {
+    return chrome.i18n?.getMessage?.(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getTabDedupKey(
+  tabId: number | undefined,
+  tabUrl: string | undefined,
+  conversationUrl?: string,
+): string {
+  return `${tabId ?? RESPONSE_COMPLETE_UNKNOWN_TAB_ID}:${conversationUrl ?? tabUrl ?? ''}`;
+}
+
+function normalizeNotificationText(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string') return '';
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+async function showResponseCompleteNotification(
+  sender: chrome.runtime.MessageSender,
+  details: ResponseCompleteNotificationDetails,
+): Promise<boolean> {
+  if (!supportsExtensionNotifications()) return false;
+
+  const setting = await chrome.storage.sync.get({
+    [StorageKeys.RESPONSE_COMPLETE_NOTIFICATION_ENABLED]: false,
+  });
+  if (setting[StorageKeys.RESPONSE_COMPLETE_NOTIFICATION_ENABLED] !== true) return false;
+
+  const conversationUrl = details.conversationUrl;
+  const dedupKey = getTabDedupKey(sender.tab?.id, sender.tab?.url, conversationUrl);
+  const now = Date.now();
+  const lastShown = responseCompleteNotificationLastShown.get(dedupKey) ?? 0;
+  if (now - lastShown < RESPONSE_COMPLETE_NOTIFICATION_DEDUP_MS) {
+    return true;
+  }
+
+  responseCompleteNotificationLastShown.set(dedupKey, now);
+  const notificationMessage = getI18nMessage(
+    RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_KEY,
+    RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_FALLBACK,
+  );
+  const conversationTitle = normalizeNotificationText(
+    details.conversationTitle,
+    RESPONSE_COMPLETE_NOTIFICATION_TITLE_MAX_LENGTH -
+      RESPONSE_COMPLETE_NOTIFICATION_TITLE.length -
+      RESPONSE_COMPLETE_NOTIFICATION_TITLE_SEPARATOR.length,
+  );
+  const userPrompt = normalizeNotificationText(
+    details.userPrompt,
+    RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_MAX_LENGTH -
+      notificationMessage.length -
+      RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_SEPARATOR.length,
+  );
+
+  try {
+    await browser.notifications.create(`gv-response-complete-${now}`, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL(RESPONSE_COMPLETE_NOTIFICATION_ICON),
+      title: conversationTitle
+        ? `${RESPONSE_COMPLETE_NOTIFICATION_TITLE}${RESPONSE_COMPLETE_NOTIFICATION_TITLE_SEPARATOR}${conversationTitle}`
+        : RESPONSE_COMPLETE_NOTIFICATION_TITLE,
+      message: userPrompt
+        ? `${notificationMessage}${RESPONSE_COMPLETE_NOTIFICATION_MESSAGE_SEPARATOR}${userPrompt}`
+        : notificationMessage,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[Background] Failed to show response completion notification:', error);
+    return false;
+  }
+}
 
 function isStarredMessagesData(value: unknown): value is StarredMessagesData {
   if (typeof value !== 'object' || value === null) return false;
@@ -177,7 +283,7 @@ async function registerFetchInterceptor(): Promise<void> {
       {
         id: FETCH_INTERCEPTOR_SCRIPT_ID,
         js: ['fetchInterceptor.js'],
-        matches: GEMINI_MATCHES,
+        matches: GEMINI_FETCH_INTERCEPTOR_MATCHES,
         world: 'MAIN',
         runAt: 'document_start',
         persistAcrossSessions: true,
@@ -189,6 +295,49 @@ async function registerFetchInterceptor(): Promise<void> {
   }
 }
 
+async function unregisterResponseCompleteObserver(): Promise<void> {
+  if (!chrome.scripting?.unregisterContentScripts) return;
+
+  try {
+    await chrome.scripting.unregisterContentScripts({
+      ids: [RESPONSE_COMPLETE_OBSERVER_SCRIPT_ID],
+    });
+  } catch {
+    // No-op if script was not registered
+  }
+}
+
+async function syncResponseCompleteObserverRegistration(): Promise<void> {
+  if (!chrome.scripting?.registerContentScripts) return;
+
+  await unregisterResponseCompleteObserver();
+
+  // Firefox supports the MAIN world for registered content scripts only in
+  // newer versions than this extension's Firefox minimum. The content script
+  // injects the same observer into the page as a cross-version fallback.
+  if (isFirefox()) return;
+
+  const setting = await chrome.storage.sync.get({
+    [StorageKeys.RESPONSE_COMPLETE_NOTIFICATION_ENABLED]: false,
+  });
+  if (setting[StorageKeys.RESPONSE_COMPLETE_NOTIFICATION_ENABLED] !== true) return;
+
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: RESPONSE_COMPLETE_OBSERVER_SCRIPT_ID,
+        js: ['response-complete-observer.js'],
+        matches: GEMINI_RESPONSE_COMPLETE_OBSERVER_MATCHES,
+        world: 'MAIN',
+        runAt: 'document_start',
+        persistAcrossSessions: true,
+      },
+    ]);
+  } catch (error) {
+    console.error('[Background] Failed to register response complete observer:', error);
+  }
+}
+
 const MANIFEST_DEFAULT_DOMAINS = new Set(
   [
     ...(chrome.runtime.getManifest().host_permissions || []),
@@ -197,6 +346,30 @@ const MANIFEST_DEFAULT_DOMAINS = new Set(
     .map(patternToDomain)
     .filter((d): d is string => !!d),
 );
+
+// Domains targeted by plugins. Granting one of these (when a user
+// enables a plugin) must NOT also register it as a Prompt-Manager "custom
+// website", so we exclude them from the permissions.onAdded → custom-website
+// merge below. Populated asynchronously from the cached catalog (see
+// refreshPluginSiteDomains).
+let pluginSiteDomains = new Set<string>();
+
+async function loadPluginCatalog(): Promise<readonly PluginManifest[]> {
+  try {
+    return await listPluginManifests();
+  } catch {
+    return [];
+  }
+}
+
+async function refreshPluginSiteDomains(): Promise<void> {
+  const catalog = await loadPluginCatalog();
+  pluginSiteDomains = new Set(
+    pluginsToOriginPatterns(catalog)
+      .map(patternToDomain)
+      .filter((d): d is string => !!d),
+  );
+}
 
 function patternToDomain(pattern: string | undefined): string | null {
   if (!pattern) return null;
@@ -240,7 +413,8 @@ function extractDomainsFromOrigins(origins?: string[]): string[] {
   const domains = origins
     .map(patternToDomain)
     .filter((d): d is string => !!d)
-    .filter((d) => !MANIFEST_DEFAULT_DOMAINS.has(d));
+    .filter((d) => !MANIFEST_DEFAULT_DOMAINS.has(d))
+    .filter((d) => !pluginSiteDomains.has(d));
   return Array.from(new Set(domains));
 }
 
@@ -321,11 +495,124 @@ async function syncCustomContentScripts(domains?: string[]): Promise<void> {
   }
 }
 
+/**
+ * Plugin ecosystem — dynamic content-script registration.
+ *
+ * Mirrors syncCustomContentScripts: derive the origins of currently-ENABLED
+ * plugins, keep only those the user has already granted host permission
+ * for, and (re)register the content script for them. The content script runs
+ * `startPluginHost()`, which mounts the enabled plugin on the page.
+ *
+ * Plugin enable-state is the single source of truth (storage.local); permissions
+ * and registrations are derived from it.
+ */
+async function getEnabledPluginOrigins(): Promise<string[]> {
+  let state: unknown = {};
+  try {
+    const stored = await chrome.storage.local.get({ [StorageKeys.PLUGINS_STATE]: {} });
+    state = stored?.[StorageKeys.PLUGINS_STATE];
+  } catch {
+    return [];
+  }
+  const enabledIds = new Set<string>();
+  if (state && typeof state === 'object' && !Array.isArray(state)) {
+    for (const [id, entry] of Object.entries(state as Record<string, { enabled?: boolean }>)) {
+      if (entry && entry.enabled === true) enabledIds.add(id);
+    }
+  }
+  const catalog = await loadPluginCatalog();
+  const enabledPlugins = catalog.filter((plugin) => enabledIds.has(plugin.id));
+  return pluginsToOriginPatterns(enabledPlugins);
+}
+
+async function injectPluginScriptIntoOpenTabs(
+  matches: string[],
+  jsResources: string[],
+  cssResources: string[] | undefined,
+): Promise<void> {
+  if (!chrome.scripting?.executeScript || !matches.length) return;
+  let tabs: chrome.tabs.Tab[] = [];
+  try {
+    tabs = await chrome.tabs.query({ url: matches });
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    if (typeof tab.id !== 'number') continue;
+    try {
+      if (cssResources?.length) {
+        await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: cssResources });
+      }
+      if (jsResources.length) {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: jsResources });
+      }
+    } catch {
+      // Tab may be discarded or disallow injection — ignore; reload will cover it.
+    }
+  }
+}
+
+async function syncPluginContentScripts(): Promise<void> {
+  if (!chrome.scripting?.registerContentScripts) return;
+
+  const manifestContentScript = chrome.runtime.getManifest().content_scripts?.[0];
+  if (!manifestContentScript) return;
+
+  const origins = await getEnabledPluginOrigins();
+  const grantedMatches = await filterGrantedOrigins(origins);
+
+  try {
+    await chrome.scripting.unregisterContentScripts({ ids: [PLUGIN_CONTENT_SCRIPT_ID] });
+  } catch {
+    // No-op if the script was not registered.
+  }
+
+  if (!grantedMatches.length) return;
+
+  const runAt =
+    manifestContentScript.run_at === 'document_start'
+      ? 'document_start'
+      : manifestContentScript.run_at === 'document_end'
+        ? 'document_end'
+        : 'document_idle';
+
+  const jsResources = isFirefox()
+    ? (manifestContentScript.js || []).map(toRelativeExtensionPath)
+    : manifestContentScript.js || [];
+  const cssResources = isFirefox()
+    ? manifestContentScript.css?.map(toRelativeExtensionPath)
+    : manifestContentScript.css;
+
+  try {
+    await chrome.scripting.registerContentScripts([
+      {
+        id: PLUGIN_CONTENT_SCRIPT_ID,
+        js: jsResources,
+        css: cssResources,
+        matches: grantedMatches,
+        allFrames: manifestContentScript.all_frames,
+        runAt,
+        persistAcrossSessions: true,
+      },
+    ]);
+    // Inject into already-open matching tabs so the user sees the effect without
+    // a manual reload.
+    await injectPluginScriptIntoOpenTabs(grantedMatches, jsResources, cssResources);
+  } catch (error) {
+    console.error('[Background] Failed to register plugin content scripts:', error);
+  }
+}
+
 // Initial sync for persisted permissions
 void syncCustomContentScripts();
+void syncPluginContentScripts();
+void refreshPluginSiteDomains();
 
 // Initial fetch interceptor registration
 void registerFetchInterceptor();
+
+// Initial response completion observer registration
+void syncResponseCompleteObserverRegistration();
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'sync') return;
@@ -342,32 +629,64 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (WATERMARK_STORAGE_KEYS.some((key) => Object.prototype.hasOwnProperty.call(changes, key))) {
     void registerFetchInterceptor();
   }
+
+  if (
+    Object.prototype.hasOwnProperty.call(
+      changes,
+      StorageKeys.RESPONSE_COMPLETE_NOTIFICATION_ENABLED,
+    )
+  ) {
+    void syncResponseCompleteObserverRegistration();
+  }
+});
+
+// Plugin ecosystem: re-reconcile dynamic registration when the set of enabled
+// plugins changes. Plugin state lives in storage.local (not sync).
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  if (Object.prototype.hasOwnProperty.call(changes, StorageKeys.PLUGINS_STATE)) {
+    void syncPluginContentScripts();
+  }
 });
 
 chrome.permissions.onAdded.addListener(({ origins }) => {
-  const domains = extractDomainsFromOrigins(origins);
-  if (domains.length) {
-    void browser.storage.sync
-      .get({ [CUSTOM_WEBSITE_KEY]: [] })
-      .then((current) => {
+  void (async () => {
+    // Refresh the plugin-site set FIRST so a freshly-granted plugin origin
+    // (e.g. claude.ai / chatgpt.com) is reliably excluded from the Prompt-Manager
+    // custom-website list. Otherwise onAdded can fire before the initial async
+    // refresh has populated `pluginSiteDomains`, racing a plugin site into the
+    // custom-website list.
+    await refreshPluginSiteDomains();
+
+    const domains = extractDomainsFromOrigins(origins);
+    if (domains.length) {
+      try {
+        const current = await browser.storage.sync.get({ [CUSTOM_WEBSITE_KEY]: [] });
         const existing = Array.isArray(current[CUSTOM_WEBSITE_KEY])
           ? current[CUSTOM_WEBSITE_KEY]
           : [];
         const merged = Array.from(new Set([...existing, ...domains]));
         if (merged.length !== existing.length) {
-          return browser.storage.sync.set({ [CUSTOM_WEBSITE_KEY]: merged });
+          await browser.storage.sync.set({ [CUSTOM_WEBSITE_KEY]: merged });
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         console.warn('[Background] Failed to persist domains from permissions.onAdded:', error);
-      });
-  }
+      }
+    }
 
-  void syncCustomContentScripts();
+    // A granted origin may belong to an enabled plugin — (re)register both the
+    // custom-website and the plugin content scripts for newly-granted origins.
+    await syncCustomContentScripts();
+    await syncPluginContentScripts();
+  })();
 });
 
 chrome.permissions.onRemoved.addListener(() => {
   void syncCustomContentScripts();
+  // Keep plugin content-script registrations in sync when a site's host
+  // permission is revoked from the browser UI — filterGrantedOrigins will now
+  // drop the revoked origin, so the stale plugin registration is removed.
+  void syncPluginContentScripts();
 });
 
 /**
@@ -665,6 +984,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             pageUrl: payload?.pageUrl ?? sender.tab?.url ?? null,
           }),
         });
+        return;
+      }
+
+      if (message?.type === 'gv.responseComplete.notify') {
+        const ok = await showResponseCompleteNotification(sender, {
+          conversationUrl:
+            typeof message.payload?.conversationUrl === 'string'
+              ? message.payload.conversationUrl
+              : undefined,
+          conversationTitle:
+            typeof message.payload?.conversationTitle === 'string'
+              ? message.payload.conversationTitle
+              : undefined,
+          userPrompt:
+            typeof message.payload?.userPrompt === 'string'
+              ? message.payload.userPrompt
+              : undefined,
+        });
+        sendResponse({ ok });
         return;
       }
 

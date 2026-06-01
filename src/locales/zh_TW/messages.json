@@ -231,6 +231,34 @@
     "message": "備註名稱（選填）",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "提示詞管理器",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "星號收藏庫",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "搜尋星號內容",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "沒有符合搜尋的星號內容",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "未命名對話",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "開啟星號內容",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "無法載入星號內容",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "切換至深色模式",
     "description": "Theme toggle tooltip - switch to dark"
@@ -318,6 +346,10 @@
   "folder_remove_conversation": {
     "message": "從資料夾中移除",
     "description": "移除對話按鈕提示"
+  },
+  "folder_remove_conversation_action": {
+    "message": "移除",
+    "description": "從資料夾移除對話確認按鈕的短標籤"
   },
   "folder_remove_conversation_confirm": {
     "message": "從此資料夾中移除「{title}」？",
@@ -1107,6 +1139,14 @@
     "message": "同時處理頁面上預覽的圖片。速度較慢，處理過程中圖片可能會短暫閃一下。",
     "description": "預覽時移除浮水印開關說明"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "推薦",
+    "description": "下載時移除浮水印開關旁的推薦標籤"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "不穩定",
+    "description": "預覽時移除浮水印開關旁的不穩定標籤"
+  },
   "nanobananaDownloadTooltip": {
     "message": "下載無浮水印圖片 (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "失敗 — 請先開啟 Gemini",
     "description": "複製 AI 整理提示失敗時的錯誤"
   },
+  "aiOrgNoConversations": {
+    "message": "找不到對話 — 請展開並捲動聊天清單後重試",
+    "description": "AI 整理未能讀取到任何對話時的按鈕文字"
+  },
   "aiOrgCopyHint": {
     "message": "複製所有對話和資料夾結構作為提示詞。貼到 Gemini 中即可獲得可匯入的資料夾方案。",
     "description": "AI 整理複製按鈕下方的提示文字"
@@ -1994,5 +2038,57 @@
   "folder_new_chat_in_folder": {
     "message": "在此資料夾新增對話",
     "description": "Folder context menu item to create a new chat and auto-assign it to this folder"
+  },
+  "responseCompleteNotification": {
+    "message": "Gemini 思考完成通知",
+    "description": "Gemini 回答完成系統通知開關"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "當 Gemini 完整輸出回答後，傳送系統通知。",
+    "description": "Gemini 回答完成系統通知提示"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "Safari 不支援擴充功能系統通知；返回頁面時 Voyager 會顯示頁面內提示。",
+    "description": "Safari 上 Gemini 回答完成通知提示"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "Gemini 思考完成",
+    "description": "Gemini 完成回答時的系統通知內文"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "新回覆已完成",
+    "description": "Gemini 回覆在畫面外完成時的前景提示文字"
+  },
+  "pluginsTitle": {
+    "message": "外掛",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "啟用強化其他 AI 網站的外掛。開啟時會要求該網站的存取權限。",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "原始碼",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "網站權限遭拒，外掛無法運作。",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "此瀏覽器不支援——無法授予此外掛所需的網站權限。",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "正在載入外掛…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "暫無可用外掛。",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "重新整理外掛",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }

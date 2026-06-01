@@ -231,6 +231,34 @@
     "message": "الاسم (اختياري)",
     "description": "Placeholder for the optional prompt name/label input used as the compact-mode headline"
   },
+  "pm_prompt_manager": {
+    "message": "مدير المطالبات",
+    "description": "Button label for returning from the starred library to Prompt Manager"
+  },
+  "pm_starred_library": {
+    "message": "مكتبة العناصر المميزة",
+    "description": "Prompt Manager starred messages library title and entry button"
+  },
+  "pm_starred_search_placeholder": {
+    "message": "البحث في الرسائل المميزة",
+    "description": "Search placeholder for starred messages in Prompt Manager"
+  },
+  "pm_starred_no_results": {
+    "message": "لا توجد رسائل مميزة تطابق بحثك",
+    "description": "Empty state when starred search has no matches"
+  },
+  "pm_starred_untitled": {
+    "message": "محادثة بلا عنوان",
+    "description": "Fallback title for starred messages without a conversation title"
+  },
+  "pm_starred_open": {
+    "message": "فتح الرسالة المميزة",
+    "description": "Tooltip for opening a starred message from Prompt Manager"
+  },
+  "pm_starred_load_error": {
+    "message": "تعذر تحميل الرسائل المميزة",
+    "description": "Error shown when starred messages cannot be loaded"
+  },
   "pm_theme_dark": {
     "message": "التبديل إلى الوضع الداكن",
     "description": "Theme toggle tooltip - switch to dark"
@@ -358,6 +386,10 @@
   "folder_remove_conversation": {
     "message": "إزالة من المجلد",
     "description": "Remove conversation button tooltip"
+  },
+  "folder_remove_conversation_action": {
+    "message": "إزالة",
+    "description": "Short confirmation button label for removing a conversation from a folder"
   },
   "folder_remove_conversation_confirm": {
     "message": "هل تريد إزالة \"{title}\" من هذا المجلد؟",
@@ -1147,6 +1179,14 @@
     "message": "تتم معالجة الصور المعروضة على الشاشة أيضًا. أبطأ؛ وقد تومض الصورة للحظة أثناء المعالجة.",
     "description": "Hint for the preview-time watermark removal toggle"
   },
+  "nanobananaBadgeRecommended": {
+    "message": "موصى به",
+    "description": "Inline badge highlighting the recommended (download-time) watermark removal option"
+  },
+  "nanobananaBadgeUnstable": {
+    "message": "غير مستقر",
+    "description": "Inline badge warning that the preview-time watermark removal option is unstable"
+  },
   "nanobananaDownloadTooltip": {
     "message": "تنزيل الصورة بدون علامة مائية (NanoBanana)",
     "description": "Download button tooltip"
@@ -1819,6 +1859,10 @@
     "message": "فشل — افتح Gemini أولاً",
     "description": "خطأ عند فشل نسخ موجه تنظيم AI"
   },
+  "aiOrgNoConversations": {
+    "message": "لم يتم العثور على محادثات — افتح قائمة محادثاتك ومرّرها ثم أعد المحاولة",
+    "description": "نص الزر عند تعذّر قراءة أي محادثة لأجل التنظيم بالذكاء الاصطناعي"
+  },
   "aiOrgCopyHint": {
     "message": "ينسخ جميع المحادثات وهيكل المجلدات كموجه. الصقه في Gemini للحصول على خطة مجلدات قابلة للاستيراد.",
     "description": "نص تلميح أسفل زر نسخ تنظيم AI"
@@ -1994,5 +2038,57 @@
   "folder_new_chat_in_folder": {
     "message": "محادثة جديدة في هذا المجلد",
     "description": "Folder context menu item to create a new chat and auto-assign it to this folder"
+  },
+  "responseCompleteNotification": {
+    "message": "إشعارات اكتمال رد Gemini",
+    "description": "Gemini response completion notification toggle"
+  },
+  "responseCompleteNotificationHint": {
+    "message": "إرسال إشعار نظام عندما ينهي Gemini الرد.",
+    "description": "Gemini response completion notification hint"
+  },
+  "responseCompleteNotificationHintSafari": {
+    "message": "لا يدعم Safari إشعارات النظام للإضافات؛ سيعرض Voyager تنبيهًا داخل الصفحة عند عودتك.",
+    "description": "Safari-specific hint for response completion notifications"
+  },
+  "responseCompleteNotificationMessage": {
+    "message": "اكتمل رد Gemini",
+    "description": "نص إشعار النظام عندما ينهي Gemini الرد"
+  },
+  "responseCompleteForegroundToast": {
+    "message": "اكتمل الرد الجديد",
+    "description": "نص التنبيه الأمامي عندما يكتمل رد Gemini خارج الشاشة"
+  },
+  "pluginsTitle": {
+    "message": "الإضافات",
+    "description": "Popup section title for the plugin list"
+  },
+  "pluginsDescription": {
+    "message": "فعّل الإضافات التي تحسّن مواقع الذكاء الاصطناعي الأخرى. تفعيل إضافة يطلب إذن الوصول إلى ذلك الموقع.",
+    "description": "Popup subtitle explaining the plugin list"
+  },
+  "pluginViewSource": {
+    "message": "المصدر",
+    "description": "Link label to a plugin source/repo"
+  },
+  "pluginPermissionDenied": {
+    "message": "تم رفض إذن الموقع، ولا يمكن تشغيل الإضافة بدونه.",
+    "description": "Shown when the user denies the site permission for a plugin"
+  },
+  "pluginUnsupportedPlatform": {
+    "message": "غير مدعوم في هذا المتصفّح — لا يمكن منح إذن الموقع الذي تحتاجه الإضافة.",
+    "description": "Shown when a plugin can't be enabled because the browser can't grant the site access it needs (e.g. Safari)"
+  },
+  "pluginsLoading": {
+    "message": "جارٍ تحميل الإضافات…",
+    "description": "Shown while the plugin catalog is loading"
+  },
+  "pluginsEmpty": {
+    "message": "لا توجد إضافات متاحة.",
+    "description": "Shown when no plugins are available"
+  },
+  "pluginsRefresh": {
+    "message": "تحديث الإضافات",
+    "description": "Tooltip for the refresh-marketplace-catalog button"
   }
 }
